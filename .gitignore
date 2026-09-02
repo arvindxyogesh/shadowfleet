@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# model artifacts are produced locally via edge_agent/scripts/export_model.py
+# and are too large to commit — never check in weights
+edge_agent/models/
+**/models/*.onnx
+**/models/*.pt
+
+.env
+.DS_Store
