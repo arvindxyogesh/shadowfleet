@@ -13,5 +13,11 @@ class Settings(BaseSettings):
     poll_error_backoff_seconds: float = 1.0
     node_stale_after_seconds: int = 120
 
+    # FR-4: a telemetry event is mined as a hard example when its weakest
+    # kept detection falls below this confidence, or prod/shadow
+    # disagreement exceeds this threshold.
+    hard_example_conf_threshold: float = 0.35
+    hard_example_disagreement_threshold: float = 0.5
+
 
 settings = Settings()

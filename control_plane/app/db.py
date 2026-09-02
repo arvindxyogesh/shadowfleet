@@ -38,6 +38,23 @@ class TelemetryEvent(Base):
     raw_payload: Mapped[dict] = mapped_column(JSON)
 
 
+class HardExample(Base):
+    """An input flagged by mining.evaluate_hard_example for labeling (FR-4)."""
+
+    __tablename__ = "hard_examples"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    input_id: Mapped[str] = mapped_column(String, unique=True, index=True)
+    event_id: Mapped[str] = mapped_column(String, index=True)
+    node_id: Mapped[str] = mapped_column(String, index=True)
+    reason: Mapped[str] = mapped_column(String)
+    confidence_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    disagreement_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    flagged_at: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String, default="pending")
+    label: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 def create_session_factory(database_url: str) -> sessionmaker:
     """All timestamps are stored as naive UTC datetimes by convention, so the
     same schema works unmodified against SQLite (tests) and Postgres (real

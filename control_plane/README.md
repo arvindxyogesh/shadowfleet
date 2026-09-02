@@ -1,11 +1,12 @@
 # control_plane
 
 Central service: consumes fleet telemetry from Redis Streams, tracks fleet
-node state, and exposes it over a REST API. Implements FR-3 (telemetry
-streaming, consumer side) from `../docs/SRS.md`.
+node state, mines hard examples for labeling, and exposes all of it over a
+REST API. Implements FR-3 (telemetry streaming, consumer side) and FR-4
+(hard-example mining) from `../docs/SRS.md`.
 
-Hard-example mining, retrain triggering, canary rollout, and drift detection
-(FR-4 through FR-9) land in M3+.
+Auto-triggered retraining, canary rollout, and drift detection (FR-5,
+FR-8, FR-9, FR-11) land in M5.
 
 ## Stack
 
@@ -19,6 +20,22 @@ Streams consumer running as an in-process background task.
   and whether it's reported telemetry within `node_stale_after_seconds`
 - `GET /fleet/nodes/{node_id}/telemetry?limit=50` — recent telemetry events
   for one node (404 for a node that's never reported in)
+- `GET /hard-examples?status=pending|labeled&limit=50` — inputs flagged by
+  mining (see below), most recently flagged first
+- `POST /hard-examples/{input_id}/label` — attach a label (`{"label": {...}}`)
+  to a flagged input and mark it `labeled`, ready for `training_pipeline` to
+  pick up
+
+## Hard-example mining (FR-4)
+
+Every persisted telemetry event is checked against two thresholds
+(`hard_example_conf_threshold`, `hard_example_disagreement_threshold`):
+an event is flagged when its weakest kept detection falls below the
+confidence threshold, or prod/shadow disagreement exceeds the disagreement
+threshold (`app/mining.py`). This milestone's MVP has no live labeling UI —
+a human or script calls `POST /hard-examples/{id}/label` with whatever
+ground truth they've produced (per the SRS's documented simulation of
+labeling via a held-out set, see §2.6).
 
 ## How the consumer works
 
@@ -48,9 +65,10 @@ pip install -r requirements-dev.txt
 pytest tests -v
 ```
 
-No real Postgres or Redis needed: the consumer is tested against
-`fakeredis` and an in-memory SQLite database, and the API layer is tested
-by overriding the DB session dependency with pre-seeded in-memory data.
+No real Postgres or Redis needed: the consumer (including hard-example
+mining) is tested against `fakeredis` and an in-memory SQLite database, and
+the API layer is tested by overriding the DB session dependency with
+pre-seeded in-memory data.
 
 ## Docker
 

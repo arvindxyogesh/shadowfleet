@@ -20,7 +20,9 @@ Per the SRS §10 roadmap:
 - ✅ **M1** — `edge_agent` inference core (FastAPI + ONNX Runtime, YOLOv8n)
 - ✅ **M2** — Shadow-mode serving, telemetry streaming (Redis Streams), and
   the `control_plane` fleet registry (FastAPI + Postgres/SQLite)
-- ⬜ M3 — Hard-example mining + manual retrain trigger
+- ✅ **M3** — Hard-example mining (`control_plane`) + a manually-triggered
+  `training_pipeline` (dataset merge, promotion evaluation, versioned
+  model registry)
 - ⬜ M4 — Dashboard v1 (Grafana)
 - ⬜ M5 — Closed loop: auto-trigger, canary rollout, drift detection, rollback
 - ⬜ M6 — Portfolio polish (`make demo`, recorded walkthrough, hosted demo)

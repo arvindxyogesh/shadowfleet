@@ -3,9 +3,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from .db import FleetNode, TelemetryEvent
+from .db import FleetNode, HardExample, TelemetryEvent
+from .mining import evaluate_hard_example
 
 logger = logging.getLogger("shadowfleet.control_plane.consumer")
 
@@ -15,17 +17,27 @@ class RedisLike(Protocol):
 
 
 class TelemetryConsumer:
-    """Polls the telemetry Redis Stream and persists events + fleet node state.
+    """Polls the telemetry Redis Stream and persists events, fleet node
+    state, and mined hard examples (FR-4).
 
-    Uses a plain XREAD with an in-memory cursor rather than a consumer group:
-    this system runs a single control-plane instance, so consumer-group
-    semantics (multiple competing readers) aren't needed yet.
+    Uses a plain XREAD with an in-memory cursor rather than a consumer
+    group: this system runs a single control-plane instance, so
+    consumer-group semantics (multiple competing readers) aren't needed yet.
     """
 
-    def __init__(self, redis_client: RedisLike, session_factory: sessionmaker, stream_name: str):
+    def __init__(
+        self,
+        redis_client: RedisLike,
+        session_factory: sessionmaker,
+        stream_name: str,
+        hard_example_conf_threshold: float = 0.35,
+        hard_example_disagreement_threshold: float = 0.5,
+    ):
         self.redis = redis_client
         self.session_factory = session_factory
         self.stream_name = stream_name
+        self.hard_example_conf_threshold = hard_example_conf_threshold
+        self.hard_example_disagreement_threshold = hard_example_disagreement_threshold
         # Starts from the beginning of the stream: on a fresh process this
         # drains any backlog (e.g. events published before the consumer's
         # first poll). The cursor then advances in-memory as messages are
@@ -72,6 +84,9 @@ class TelemetryConsumer:
         node.prod_model_version = event.get("prod_model_version")
         node.shadow_model_version = event.get("shadow_model_version")
 
+        confidence_min = event.get("confidence_min")
+        disagreement_score = event.get("disagreement_score")
+
         session.add(
             TelemetryEvent(
                 event_id=event["event_id"],
@@ -80,9 +95,51 @@ class TelemetryConsumer:
                 input_id=event.get("input_id"),
                 prod_model_version=event.get("prod_model_version"),
                 shadow_model_version=event.get("shadow_model_version"),
-                confidence_min=event.get("confidence_min"),
-                disagreement_score=event.get("disagreement_score"),
+                confidence_min=confidence_min,
+                disagreement_score=disagreement_score,
                 latency_ms=event.get("latency_ms"),
                 raw_payload=event,
+            )
+        )
+
+        self._maybe_flag_hard_example(session, event, confidence_min, disagreement_score, timestamp)
+
+    def _maybe_flag_hard_example(
+        self,
+        session: Session,
+        event: dict,
+        confidence_min: float | None,
+        disagreement_score: float | None,
+        timestamp: datetime,
+    ) -> None:
+        reason = evaluate_hard_example(
+            confidence_min,
+            disagreement_score,
+            self.hard_example_conf_threshold,
+            self.hard_example_disagreement_threshold,
+        )
+        if reason is None:
+            return
+
+        input_id = event.get("input_id")
+        if input_id is None:
+            return
+
+        already_flagged = session.execute(
+            select(HardExample).where(HardExample.input_id == input_id)
+        ).scalar_one_or_none()
+        if already_flagged is not None:
+            return
+
+        session.add(
+            HardExample(
+                input_id=input_id,
+                event_id=event["event_id"],
+                node_id=event["node_id"],
+                reason=reason,
+                confidence_min=confidence_min,
+                disagreement_score=disagreement_score,
+                flagged_at=timestamp,
+                status="pending",
             )
         )

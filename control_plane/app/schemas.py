@@ -29,3 +29,21 @@ class TelemetryEventOut(BaseModel):
     confidence_min: float | None
     disagreement_score: float | None
     latency_ms: float | None
+
+
+class HardExampleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+    input_id: str
+    event_id: str
+    node_id: str
+    reason: str
+    confidence_min: float | None
+    disagreement_score: float | None
+    flagged_at: datetime
+    status: str
+    label: dict | None
+
+
+class LabelPayload(BaseModel):
+    label: dict

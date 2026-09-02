@@ -10,8 +10,14 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .consumer import TelemetryConsumer
-from .db import FleetNode, TelemetryEvent, create_session_factory
-from .schemas import FleetNodeOut, HealthResponse, TelemetryEventOut
+from .db import FleetNode, HardExample, TelemetryEvent, create_session_factory
+from .schemas import (
+    FleetNodeOut,
+    HardExampleOut,
+    HealthResponse,
+    LabelPayload,
+    TelemetryEventOut,
+)
 
 logger = logging.getLogger("shadowfleet.control_plane")
 
@@ -30,7 +36,11 @@ async def lifespan(app: FastAPI):
     app.state.session_factory = create_session_factory(settings.database_url)
     app.state.redis = redis.from_url(settings.redis_url)
     app.state.consumer = TelemetryConsumer(
-        app.state.redis, app.state.session_factory, settings.telemetry_stream
+        app.state.redis,
+        app.state.session_factory,
+        settings.telemetry_stream,
+        hard_example_conf_threshold=settings.hard_example_conf_threshold,
+        hard_example_disagreement_threshold=settings.hard_example_disagreement_threshold,
     )
 
     stop_event = asyncio.Event()
@@ -93,3 +103,30 @@ def node_telemetry(
     if not events and session.get(FleetNode, node_id) is None:
         raise HTTPException(status_code=404, detail=f"unknown node: {node_id}")
     return events
+
+
+@app.get("/hard-examples", response_model=list[HardExampleOut])
+def list_hard_examples(
+    status: str | None = None, limit: int = 50, session: Session = Depends(get_session)
+) -> list[HardExampleOut]:
+    query = select(HardExample).order_by(HardExample.flagged_at.desc()).limit(limit)
+    if status is not None:
+        query = query.where(HardExample.status == status)
+    return session.execute(query).scalars().all()
+
+
+@app.post("/hard-examples/{input_id}/label", response_model=HardExampleOut)
+def label_hard_example(
+    input_id: str, payload: LabelPayload, session: Session = Depends(get_session)
+) -> HardExampleOut:
+    example = session.execute(
+        select(HardExample).where(HardExample.input_id == input_id)
+    ).scalar_one_or_none()
+    if example is None:
+        raise HTTPException(status_code=404, detail=f"unknown hard example: {input_id}")
+
+    example.status = "labeled"
+    example.label = payload.label
+    session.commit()
+    session.refresh(example)
+    return example
