@@ -36,6 +36,10 @@ services:
       SHADOWFLEET_NODE_ID: node-1
       SHADOWFLEET_REDIS_URL: redis://redis:6379/0
       SHADOWFLEET_MODEL_PATH: /app/models/yolov8n.onnx
+      # Lets control_plane's rollout manager reach this node's /admin/model
+      # endpoint for OTA pushes (FR-8) -- the compose network resolves
+      # service names, so this is reachable from the control_plane container.
+      SHADOWFLEET_SELF_BASE_URL: http://edge_agent:8000
     volumes:
       - ../edge_agent/models:/app/models:ro
     depends_on:

@@ -26,7 +26,10 @@ Per the SRS §10 roadmap:
 - ✅ **M4** — Grafana dashboard (fleet status, telemetry trends,
   hard-example counts), provisioned against `control_plane`'s Postgres —
   see `dashboard/README.md`
-- ⬜ M5 — Closed loop: auto-trigger, canary rollout, drift detection, rollback
+- ✅ **M5** — The closed loop: auto-triggered retraining (FR-5), canary
+  rollout with OTA model hot-swap (FR-8), drift-based automatic rollback
+  (FR-9), manual pause/resume/rollback with an audit log (FR-11) — see
+  `control_plane/README.md`'s "Closed loop" section
 - ⬜ M6 — Portfolio polish (`make demo`, recorded walkthrough, hosted demo)
 
 Run the current stack locally via `infra/docker-compose.yml` — see

@@ -175,3 +175,106 @@ def test_label_hard_example_404_for_unknown_input():
         app.dependency_overrides.clear()
 
     assert resp.status_code == 404
+
+
+def test_start_rollout_then_list_and_get_it():
+    # node-1 and node-stale both exist with no base_url, so the rollout
+    # manager's OTA push is a no-op here -- this test is about the API
+    # wiring and persisted state, not the network call (covered in
+    # test_rollout.py against a fake node client).
+    app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
+    try:
+        with TestClient(app) as client:
+            start_resp = client.post(
+                "/rollouts",
+                json={"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100},
+            )
+            assert start_resp.status_code == 201
+            rollout_id = start_resp.json()["id"]
+            assert start_resp.json()["status"] == "shadow"
+
+            list_resp = client.get("/rollouts")
+            assert len(list_resp.json()) == 1
+
+            detail_resp = client.get(f"/rollouts/{rollout_id}")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert detail_resp.status_code == 200
+    assert len(detail_resp.json()["nodes"]) == 2
+
+
+def test_get_rollout_404_for_unknown_id():
+    app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
+    try:
+        with TestClient(app) as client:
+            resp = client.get("/rollouts/9999")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 404
+
+
+def test_rollout_pause_resume_and_rollback_endpoints():
+    app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
+    try:
+        with TestClient(app) as client:
+            start_resp = client.post(
+                "/rollouts",
+                json={"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100},
+            )
+            rollout_id = start_resp.json()["id"]
+
+            pause_resp = client.post(f"/rollouts/{rollout_id}/pause", json={"actor": "alice"})
+            assert pause_resp.status_code == 200
+            assert pause_resp.json()["status"] == "paused"
+
+            resume_resp = client.post(f"/rollouts/{rollout_id}/resume", json={"actor": "alice"})
+            assert resume_resp.status_code == 200
+            assert resume_resp.json()["status"] == "shadow"
+
+            rollback_resp = client.post(
+                f"/rollouts/{rollout_id}/rollback", json={"actor": "alice", "reason": "changed my mind"}
+            )
+            assert rollback_resp.status_code == 200
+            assert rollback_resp.json()["status"] == "rolled_back"
+            assert rollback_resp.json()["reason"] == "changed my mind"
+
+            audit_resp = client.get("/audit-log")
+    finally:
+        app.dependency_overrides.clear()
+
+    actions = {entry["action"] for entry in audit_resp.json()}
+    assert {"rollout_started", "rollout_paused", "rollout_resumed", "rollback"} <= actions
+
+
+def test_start_rollout_with_no_fleet_nodes_returns_400():
+    empty_session_factory = create_session_factory("sqlite:///:memory:")
+    app.dependency_overrides[get_session] = _override_session(empty_session_factory)
+    try:
+        with TestClient(app) as client:
+            resp = client.post(
+                "/rollouts", json={"model_version": "v2", "model_path": "models/v2.onnx"}
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 400
+
+
+def test_pause_a_never_started_rollout_returns_400():
+    app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
+    try:
+        with TestClient(app) as client:
+            start_resp = client.post(
+                "/rollouts",
+                json={"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100},
+            )
+            rollout_id = start_resp.json()["id"]
+            client.post(f"/rollouts/{rollout_id}/pause", json={})
+
+            second_pause_resp = client.post(f"/rollouts/{rollout_id}/pause", json={})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert second_pause_resp.status_code == 400

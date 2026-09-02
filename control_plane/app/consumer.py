@@ -83,6 +83,8 @@ class TelemetryConsumer:
             node.last_seen = timestamp
         node.prod_model_version = event.get("prod_model_version")
         node.shadow_model_version = event.get("shadow_model_version")
+        if event.get("base_url"):
+            node.base_url = event["base_url"]
 
         confidence_min = event.get("confidence_min")
         disagreement_score = event.get("disagreement_score")

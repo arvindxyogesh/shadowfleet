@@ -10,12 +10,33 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .consumer import TelemetryConsumer
-from .db import FleetNode, HardExample, TelemetryEvent, create_session_factory
+from .db import (
+    AuditLogEntry,
+    FleetNode,
+    HardExample,
+    RetrainTrigger,
+    Rollout,
+    RolloutNodeAssignment,
+    TelemetryEvent,
+    create_session_factory,
+)
+from .node_client import HTTPNodeClient
+from .retrain import check_and_dispatch_retrain
+from .retrain_dispatch import LoggingRetrainDispatcher
+from .rollout import RolloutError, RolloutManager
 from .schemas import (
+    ActorPayload,
+    AuditLogEntryOut,
     FleetNodeOut,
     HardExampleOut,
     HealthResponse,
     LabelPayload,
+    RetrainTriggerOut,
+    RollbackPayload,
+    RolloutDetailOut,
+    RolloutNodeAssignmentOut,
+    RolloutOut,
+    StartRolloutRequest,
     TelemetryEventOut,
 )
 
@@ -31,6 +52,24 @@ async def _consume_forever(consumer: TelemetryConsumer, stop_event: asyncio.Even
             await asyncio.sleep(settings.poll_error_backoff_seconds)
 
 
+async def _evaluate_rollouts_forever(app: FastAPI, stop_event: asyncio.Event) -> None:
+    while not stop_event.is_set():
+        try:
+            session = app.state.session_factory()
+            try:
+                check_and_dispatch_retrain(
+                    session, app.state.retrain_dispatcher, settings.retrain_trigger_threshold
+                )
+                active = session.execute(select(Rollout).where(Rollout.status == "shadow")).scalars().all()
+                for rollout in active:
+                    await app.state.rollout_manager.evaluate_rollout(session, rollout)
+            finally:
+                session.close()
+        except Exception:
+            logger.exception("rollout evaluation loop failed; will retry")
+        await asyncio.sleep(settings.rollout_check_interval_seconds)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.session_factory = create_session_factory(settings.database_url)
@@ -42,14 +81,22 @@ async def lifespan(app: FastAPI):
         hard_example_conf_threshold=settings.hard_example_conf_threshold,
         hard_example_disagreement_threshold=settings.hard_example_disagreement_threshold,
     )
+    app.state.rollout_manager = RolloutManager(
+        HTTPNodeClient(),
+        drift_min_effect_size=settings.drift_min_effect_size,
+        drift_t_stat_threshold=settings.drift_t_stat_threshold,
+    )
+    app.state.retrain_dispatcher = LoggingRetrainDispatcher()
 
     stop_event = asyncio.Event()
     consumer_task = asyncio.create_task(_consume_forever(app.state.consumer, stop_event))
+    rollout_task = asyncio.create_task(_evaluate_rollouts_forever(app, stop_event))
 
     yield
 
     stop_event.set()
     consumer_task.cancel()
+    rollout_task.cancel()
     await app.state.redis.aclose()
 
 
@@ -62,6 +109,13 @@ def get_session(request: Request) -> Session:
         yield session
     finally:
         session.close()
+
+
+def _get_rollout_or_404(session: Session, rollout_id: int) -> Rollout:
+    rollout = session.get(Rollout, rollout_id)
+    if rollout is None:
+        raise HTTPException(status_code=404, detail=f"unknown rollout: {rollout_id}")
+    return rollout
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -130,3 +184,114 @@ def label_hard_example(
     session.commit()
     session.refresh(example)
     return example
+
+
+@app.post("/rollouts", response_model=RolloutOut, status_code=201)
+async def start_rollout(
+    payload: StartRolloutRequest, request: Request, session: Session = Depends(get_session)
+) -> RolloutOut:
+    manager: RolloutManager = request.app.state.rollout_manager
+    try:
+        rollout = await manager.start_rollout(
+            session,
+            model_version=payload.model_version,
+            model_path=payload.model_path,
+            target_percentage=payload.target_percentage,
+            evaluation_window_seconds=(
+                payload.evaluation_window_seconds or settings.rollout_evaluation_window_seconds
+            ),
+            previous_model_path=payload.previous_model_path,
+            actor=payload.actor,
+        )
+    except RolloutError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return rollout
+
+
+@app.get("/rollouts", response_model=list[RolloutOut])
+def list_rollouts(session: Session = Depends(get_session)) -> list[RolloutOut]:
+    return session.execute(select(Rollout).order_by(Rollout.started_at.desc())).scalars().all()
+
+
+@app.get("/rollouts/{rollout_id}", response_model=RolloutDetailOut)
+def get_rollout(rollout_id: int, session: Session = Depends(get_session)) -> RolloutDetailOut:
+    rollout = _get_rollout_or_404(session, rollout_id)
+    assignments = (
+        session.execute(select(RolloutNodeAssignment).where(RolloutNodeAssignment.rollout_id == rollout_id))
+        .scalars()
+        .all()
+    )
+    return RolloutDetailOut(
+        id=rollout.id,
+        model_version=rollout.model_version,
+        previous_version=rollout.previous_version,
+        target_percentage=rollout.target_percentage,
+        status=rollout.status,
+        started_at=rollout.started_at,
+        evaluation_window_seconds=rollout.evaluation_window_seconds,
+        ended_at=rollout.ended_at,
+        reason=rollout.reason,
+        nodes=[RolloutNodeAssignmentOut.model_validate(a) for a in assignments],
+    )
+
+
+@app.post("/rollouts/{rollout_id}/pause", response_model=RolloutOut)
+async def pause_rollout(
+    rollout_id: int, payload: ActorPayload, request: Request, session: Session = Depends(get_session)
+) -> RolloutOut:
+    manager: RolloutManager = request.app.state.rollout_manager
+    rollout = _get_rollout_or_404(session, rollout_id)
+    try:
+        await manager.pause_rollout(session, rollout, actor=payload.actor)
+    except RolloutError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session.refresh(rollout)
+    return rollout
+
+
+@app.post("/rollouts/{rollout_id}/resume", response_model=RolloutOut)
+async def resume_rollout(
+    rollout_id: int, payload: ActorPayload, request: Request, session: Session = Depends(get_session)
+) -> RolloutOut:
+    manager: RolloutManager = request.app.state.rollout_manager
+    rollout = _get_rollout_or_404(session, rollout_id)
+    try:
+        await manager.resume_rollout(session, rollout, actor=payload.actor)
+    except RolloutError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session.refresh(rollout)
+    return rollout
+
+
+@app.post("/rollouts/{rollout_id}/rollback", response_model=RolloutOut)
+async def rollback_rollout(
+    rollout_id: int, payload: RollbackPayload, request: Request, session: Session = Depends(get_session)
+) -> RolloutOut:
+    manager: RolloutManager = request.app.state.rollout_manager
+    rollout = _get_rollout_or_404(session, rollout_id)
+    try:
+        await manager.force_rollback(session, rollout, reason=payload.reason, actor=payload.actor)
+    except RolloutError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    session.refresh(rollout)
+    return rollout
+
+
+@app.get("/audit-log", response_model=list[AuditLogEntryOut])
+def list_audit_log(limit: int = 50, session: Session = Depends(get_session)) -> list[AuditLogEntryOut]:
+    return (
+        session.execute(select(AuditLogEntry).order_by(AuditLogEntry.timestamp.desc()).limit(limit))
+        .scalars()
+        .all()
+    )
+
+
+@app.get("/retrain-triggers", response_model=list[RetrainTriggerOut])
+def list_retrain_triggers(
+    limit: int = 50, session: Session = Depends(get_session)
+) -> list[RetrainTriggerOut]:
+    return (
+        session.execute(select(RetrainTrigger).order_by(RetrainTrigger.triggered_at.desc()).limit(limit))
+        .scalars()
+        .all()
+    )

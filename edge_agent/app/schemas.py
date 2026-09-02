@@ -33,3 +33,19 @@ class HealthResponse(BaseModel):
     node_id: str
     model_version: str
     model_loaded: bool
+
+
+class SetModelRequest(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    role: str  # "prod" | "shadow"
+    model_version: str | None = None
+    model_path: str | None = None
+
+
+class SetModelResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    node_id: str
+    model_version: str
+    shadow_model_version: str | None

@@ -3,8 +3,12 @@
 Simulated fleet node. Runs the current production detection model on input
 frames and returns predictions; optionally runs a second "shadow" candidate
 model on the same input and logs (but never serves) its output. Every
-inference call emits a telemetry event to the fleet's Redis Stream.
-Implements FR-1, FR-2, and the producer side of FR-3 from `../docs/SRS.md`.
+inference call emits a telemetry event to the fleet's Redis Stream. Its
+model versions can be hot-swapped at runtime via `/admin/model` — the
+control plane's rollout manager calls this to push canary/production
+model updates without restarting the node. Implements FR-1, FR-2, the
+producer side of FR-3, and the OTA mechanism behind FR-8 from
+`../docs/SRS.md`.
 
 ## Stack
 
@@ -53,6 +57,23 @@ If no model file is found at `SHADOWFLEET_MODEL_PATH`, the service still
 starts and `/health` reports `degraded` — `/infer` returns `503` rather than
 crashing, which is deliberate (a fleet node with a bad/missing model artifact
 should fail loudly on that one endpoint, not take the process down).
+
+## Runtime model hot-swap (OTA)
+
+```bash
+curl -X POST http://localhost:8000/admin/model \
+  -H 'Content-Type: application/json' \
+  -d '{"role": "prod", "model_version": "yolov8n-v2", "model_path": "models/v2.onnx"}'
+```
+
+`role` is `"prod"` or `"shadow"`; setting `role: "shadow"` with
+`model_path: null` clears the shadow model. A failed load (bad path,
+corrupt file) returns `400` and leaves the currently running model
+untouched — the node keeps serving. This is exactly what
+`control_plane`'s rollout manager calls to push canary and production
+updates (see `../control_plane/README.md`'s "Closed loop" section); set
+`SHADOWFLEET_SELF_BASE_URL` to this node's reachable address so it can be
+reached for pushes and appears correctly in telemetry.
 
 ## Tests
 

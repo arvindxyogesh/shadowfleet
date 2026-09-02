@@ -202,6 +202,41 @@
       ],
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "options": { "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] } }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Rollouts",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT id AS \"ID\", model_version AS \"Model Version\", status AS \"Status\", target_percentage AS \"Target %\", started_at AS \"Started\", ended_at AS \"Ended\", reason AS \"Reason\" FROM rollouts ORDER BY started_at DESC LIMIT 20;"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Recent Audit Log",
+      "description": "Every automatic and manual rollout/retrain action (FR-11).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT timestamp AS \"Time\", actor AS \"Actor\", action AS \"Action\" FROM audit_log ORDER BY timestamp DESC LIMIT 20;"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {}
     }
   ]
 }

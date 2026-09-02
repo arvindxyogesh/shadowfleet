@@ -18,8 +18,9 @@ respect the dashboard's time-range picker and auto-refresh.
 - `provisioning/dashboards/dashboards.yml` — tells Grafana to load any
   dashboard JSON found under `dashboards/`
 - `dashboards/fleet-overview.json` — the dashboard itself: node status
-  table, avg confidence/latency/disagreement time series per node, and
-  hard-example counts by status and reason. Refreshes every 10s.
+  table, avg confidence/latency/disagreement time series per node,
+  hard-example counts by status and reason, and (M5) a rollouts table and
+  the recent audit log. Refreshes every 10s.
 
 ## Running it
 
@@ -38,9 +39,3 @@ no manual datasource or import step required.
 Panels will show a "relation does not exist" error until `control_plane`
 has started at least once and created its schema — normal on a very first
 `docker compose up` if Grafana's container finishes starting first.
-
-## What's not here yet
-
-Rollout progress and rollback events (also part of FR-10) have nothing to
-show until M5 adds canary rollout and drift detection — those panels get
-added to this same dashboard then, against the same Postgres datasource.

@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from edge_agent.app.main import app, get_model, get_shadow_model, get_telemetry
+from edge_agent.app.main import app, get_model, get_shadow_model, get_shadow_model_version, get_telemetry
 
 
 class FakeModel:
@@ -122,6 +122,7 @@ def test_infer_with_shadow_model_logs_disagreement_but_never_serves_it(sample_im
     fake_telemetry = FakeTelemetryPublisher()
     app.dependency_overrides[get_model] = lambda: FakeModel()
     app.dependency_overrides[get_shadow_model] = lambda: FakeShadowModel()
+    app.dependency_overrides[get_shadow_model_version] = lambda: "shadow-candidate"
     app.dependency_overrides[get_telemetry] = lambda: fake_telemetry
     try:
         with TestClient(app) as client:

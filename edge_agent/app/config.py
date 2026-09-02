@@ -22,5 +22,10 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     telemetry_stream: str = "telemetry:events"
 
+    # Reachable base URL for this node, reported in telemetry so the
+    # control plane knows where to send OTA model updates (FR-8). Unset
+    # in single-node/local dev; required for a node to receive rollouts.
+    self_base_url: str | None = None
+
 
 settings = Settings()
