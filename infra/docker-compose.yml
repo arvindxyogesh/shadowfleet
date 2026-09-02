@@ -1,0 +1,45 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: shadowfleet
+      POSTGRES_USER: shadowfleet
+      POSTGRES_PASSWORD: shadowfleet
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  control_plane:
+    build: ../control_plane
+    ports:
+      - "8001:8001"
+    environment:
+      SHADOWFLEET_CP_REDIS_URL: redis://redis:6379/0
+      SHADOWFLEET_CP_DATABASE_URL: postgresql+psycopg2://shadowfleet:shadowfleet@postgres:5432/shadowfleet
+    depends_on:
+      - redis
+      - postgres
+
+  edge_agent:
+    build: ../edge_agent
+    ports:
+      - "8000:8000"
+    environment:
+      SHADOWFLEET_NODE_ID: node-1
+      SHADOWFLEET_REDIS_URL: redis://redis:6379/0
+      SHADOWFLEET_MODEL_PATH: /app/models/yolov8n.onnx
+    volumes:
+      - ../edge_agent/models:/app/models:ro
+    depends_on:
+      - redis
+
+volumes:
+  postgres_data:

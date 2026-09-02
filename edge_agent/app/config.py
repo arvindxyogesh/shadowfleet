@@ -14,5 +14,13 @@ class Settings(BaseSettings):
     iou_threshold: float = 0.45
     max_detections: int = 300
 
+    # Shadow-mode candidate model: runs alongside production, logged but
+    # never served. Unset by default (no shadow evaluation).
+    shadow_model_path: str | None = None
+    shadow_model_version: str = "shadow-candidate"
+
+    redis_url: str = "redis://localhost:6379/0"
+    telemetry_stream: str = "telemetry:events"
+
 
 settings = Settings()

@@ -15,8 +15,18 @@ contracts, roadmap).
 
 ## Status
 
-Requirements-and-architecture phase (see SRS §10 for the build roadmap). No
-services implemented yet.
+Per the SRS §10 roadmap:
+
+- ✅ **M1** — `edge_agent` inference core (FastAPI + ONNX Runtime, YOLOv8n)
+- ✅ **M2** — Shadow-mode serving, telemetry streaming (Redis Streams), and
+  the `control_plane` fleet registry (FastAPI + Postgres/SQLite)
+- ⬜ M3 — Hard-example mining + manual retrain trigger
+- ⬜ M4 — Dashboard v1 (Grafana)
+- ⬜ M5 — Closed loop: auto-trigger, canary rollout, drift detection, rollback
+- ⬜ M6 — Portfolio polish (`make demo`, recorded walkthrough, hosted demo)
+
+Run the current stack locally via `infra/docker-compose.yml` — see
+[`infra/README.md`](infra/README.md).
 
 ## Repository Layout
 

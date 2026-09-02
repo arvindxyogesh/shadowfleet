@@ -1,15 +1,15 @@
 # edge_agent
 
 Simulated fleet node. Runs the current production detection model on input
-frames and returns predictions. Implements FR-1 (inference service) from
-`../docs/SRS.md`.
-
-Shadow-mode dual-model serving (FR-2) and telemetry streaming (FR-3) land in
-M2 — this milestone is the single-model inference core.
+frames and returns predictions; optionally runs a second "shadow" candidate
+model on the same input and logs (but never serves) its output. Every
+inference call emits a telemetry event to the fleet's Redis Stream.
+Implements FR-1, FR-2, and the producer side of FR-3 from `../docs/SRS.md`.
 
 ## Stack
 
-FastAPI + ONNX Runtime (CPU), YOLOv8n by default. No GPU dependency.
+FastAPI + ONNX Runtime (CPU), YOLOv8n by default, Redis Streams for
+telemetry. No GPU dependency.
 
 ## Setup
 
@@ -26,8 +26,21 @@ FastAPI + ONNX Runtime (CPU), YOLOv8n by default. No GPU dependency.
 
    ```bash
    pip install -r requirements.txt
-   SHADOWFLEET_MODEL_PATH=models/yolov8n.onnx uvicorn app.main:app --reload
+   SHADOWFLEET_MODEL_PATH=models/yolov8n.onnx \
+   SHADOWFLEET_REDIS_URL=redis://localhost:6379/0 \
+   uvicorn app.main:app --reload
    ```
+
+   To also run a shadow candidate (e.g. a retrained version being
+   evaluated), export a second ONNX file and set:
+
+   ```bash
+   SHADOWFLEET_SHADOW_MODEL_PATH=models/yolov8n-candidate.onnx
+   SHADOWFLEET_SHADOW_MODEL_VERSION=yolov8n-candidate-v2
+   ```
+
+   Telemetry publishing is best-effort — if Redis is unreachable, `/infer`
+   still serves predictions normally; the failure is only logged.
 
 3. Try it:
 
@@ -48,10 +61,12 @@ pip install -r requirements-dev.txt
 pytest tests -v
 ```
 
-Tests never require real model weights: postprocessing (NMS, box decoding,
-letterbox-unwarping) is tested directly against synthetic arrays, and the API
-layer is tested with a `FakeModel` injected via FastAPI's dependency
-override, so CI runs with zero network access and zero large downloads.
+Tests never require real model weights or a real Redis instance:
+postprocessing (NMS, box decoding, letterbox-unwarping) and disagreement
+scoring are tested directly against synthetic arrays, and the API layer is
+tested with `FakeModel`/`FakeTelemetryPublisher` injected via FastAPI's
+dependency override, so CI runs with zero network access and zero large
+downloads.
 
 ## Docker
 
