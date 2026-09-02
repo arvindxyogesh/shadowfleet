@@ -108,6 +108,59 @@ async def test_evaluate_rollout_promotes_after_window_with_no_drift():
 
 
 @pytest.mark.asyncio
+async def test_evaluate_rollout_does_not_complete_when_ota_push_fails_everywhere():
+    session_factory = create_session_factory("sqlite:///:memory:")
+    node_client = FakeNodeClient(unreachable={"http://node-0:8000"})
+    manager = _make_manager(node_client)
+
+    with session_factory() as session:
+        seed_node(session, "node-0")
+        session.commit()
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+
+        past_window = rollout.started_at + timedelta(seconds=301)
+        await manager.evaluate_rollout(session, rollout, now=past_window)
+
+        session.refresh(rollout)
+        # A rollout whose OTA push never actually landed on any node must
+        # not be reported as "completed" -- that would be a lie the
+        # dashboard and API would repeat.
+        assert rollout.status == "shadow"
+        assert rollout.ended_at is None
+
+        assignment = session.query(RolloutNodeAssignment).filter_by(rollout_id=rollout.id, role="canary").one()
+        assert assignment.promoted is False
+
+        actions = [a.action for a in session.query(AuditLogEntry).all()]
+        assert "promotion_failed" in actions
+        assert "rollout_completed" not in actions
+
+
+@pytest.mark.asyncio
+async def test_evaluate_rollout_retries_promotion_on_a_later_cycle_after_failure():
+    session_factory = create_session_factory("sqlite:///:memory:")
+    node_client = FakeNodeClient(unreachable={"http://node-0:8000"})
+    manager = _make_manager(node_client)
+
+    with session_factory() as session:
+        seed_node(session, "node-0")
+        session.commit()
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+
+        past_window = rollout.started_at + timedelta(seconds=301)
+        await manager.evaluate_rollout(session, rollout, now=past_window)
+        session.refresh(rollout)
+        assert rollout.status == "shadow"
+
+        # The node comes back; the next cycle should succeed.
+        node_client.unreachable.clear()
+        await manager.evaluate_rollout(session, rollout, now=past_window + timedelta(seconds=30))
+
+        session.refresh(rollout)
+        assert rollout.status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_evaluate_rollout_does_nothing_before_window_elapses():
     session_factory = create_session_factory("sqlite:///:memory:")
     node_client = FakeNodeClient()

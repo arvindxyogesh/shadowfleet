@@ -155,7 +155,23 @@ class RolloutManager:
             .all()
         )
         for assignment in assignments:
-            assignment.promoted = assignment.node_id in pushed
+            if assignment.node_id in pushed:
+                assignment.promoted = True
+
+        if not all(a.promoted for a in assignments):
+            # Some canary nodes never actually received the new production
+            # model -- calling this "completed" would be a lie. Stay in
+            # `shadow` (already-promoted nodes keep assignment.promoted=True,
+            # so a retry only re-pushes to the ones still missing it) and
+            # let the next evaluation cycle try again.
+            log_audit(
+                session,
+                actor="system",
+                action="promotion_failed",
+                details={"rollout_id": rollout.id, "promoted_nodes": pushed, "unreachable": unreachable},
+            )
+            session.commit()
+            return
 
         rollout.status = "completed"
         rollout.ended_at = now
