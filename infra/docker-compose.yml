@@ -41,5 +41,22 @@ services:
     depends_on:
       - redis
 
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: shadowfleet
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ../dashboard/provisioning:/etc/grafana/provisioning
+      - ../dashboard/dashboards:/etc/grafana/provisioning/dashboards/json
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - postgres
+      - control_plane
+
 volumes:
   postgres_data:
+  grafana_data:

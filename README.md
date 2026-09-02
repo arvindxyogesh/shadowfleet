@@ -23,7 +23,9 @@ Per the SRS §10 roadmap:
 - ✅ **M3** — Hard-example mining (`control_plane`) + a manually-triggered
   `training_pipeline` (dataset merge, promotion evaluation, versioned
   model registry)
-- ⬜ M4 — Dashboard v1 (Grafana)
+- ✅ **M4** — Grafana dashboard (fleet status, telemetry trends,
+  hard-example counts), provisioned against `control_plane`'s Postgres —
+  see `dashboard/README.md`
 - ⬜ M5 — Closed loop: auto-trigger, canary rollout, drift detection, rollback
 - ⬜ M6 — Portfolio polish (`make demo`, recorded walkthrough, hosted demo)
 

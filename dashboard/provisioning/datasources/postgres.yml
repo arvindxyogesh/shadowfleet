@@ -1,0 +1,18 @@
+apiVersion: 1
+
+datasources:
+  - name: ShadowFleet Postgres
+    type: postgres
+    uid: shadowfleet-postgres
+    access: proxy
+    url: postgres:5432
+    database: shadowfleet
+    user: shadowfleet
+    isDefault: true
+    editable: true
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: shadowfleet
