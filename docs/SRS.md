@@ -1,6 +1,6 @@
 # Software Requirements Specification
 
-## FleetVision — A Closed-Loop Fleet Data Engine for Computer Vision
+## ShadowFleet — A Closed-Loop Fleet Data Engine for Computer Vision
 
 **Version:** 0.1.0
 **Status:** Draft
@@ -12,7 +12,7 @@
 
 ### 1.1 Purpose
 
-This document specifies the requirements for **FleetVision**, a software system that
+This document specifies the requirements for **ShadowFleet**, a software system that
 reproduces — at laptop/free-tier scale — the *data engine* loop that production
 computer-vision fleets (e.g. Tesla Autopilot/FSD, Waymo, Cruise) use to keep a deployed
 model improving after launch: fleet telemetry → shadow-mode evaluation → hard-example
@@ -83,7 +83,7 @@ codebase in this repository.
 
 ### 2.1 Product Perspective
 
-FleetVision is a new, self-contained system with no dependency on proprietary
+ShadowFleet is a new, self-contained system with no dependency on proprietary
 infrastructure. It is composed of independently deployable services connected by a
 message bus and a shared model/data registry, all runnable via Docker Compose locally
 and via GitHub Actions in CI.

@@ -1,4 +1,4 @@
-# FleetVision
+# ShadowFleet
 
 A closed-loop **fleet data engine** for computer vision, scaled down from
 production systems (Tesla Autopilot/FSD, Waymo) to run entirely on free-tier /
