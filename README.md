@@ -94,6 +94,37 @@ free tiers can't sustain a multi-container stack continuously) can be
 deployed to Hugging Face Spaces: see
 [`deploy/huggingface-spaces/`](deploy/huggingface-spaces/).
 
+## Validation
+
+The full stack has been run end-to-end for real — real Docker Compose,
+real YOLOv8n COCO weights (not a stand-in), real Redis/Postgres, on a
+GPU-equipped Linux box (inference itself runs on CPU by design, per SRS
+constraint C-2). Numbers below are from that run's `make demo` output
+(15 synthetic frames through `/infer`, then a canary rollout to
+completion):
+
+| Metric | Value |
+|---|---|
+| Inference latency (CPU, ONNX Runtime) | mean 43.2ms · median 41.9ms · min 31.7ms · max 78.6ms (n=15) |
+| Detections on synthetic demo frames | 6/15 frames (40%) — the demo's frames are plain shapes, not real dashcam imagery, so a real COCO-trained model correctly finding little in most of them is expected, not a bug |
+| Hard examples mined (FR-4) | 6/6 — every frame the model *did* detect something in was flagged `low_confidence`, i.e. mining correctly caught 100% of the model's genuinely low-confidence calls on out-of-distribution input |
+| Canary rollout duration (FR-8) | 21s (20s evaluation window + one 5s poll cycle), ended `completed` |
+| Model | YOLOv8n, 3,151,904 params, 72 layers, 8.7 GFLOPs, 12.3MB ONNX (opset 12) |
+
+This also caught and fixed a real bug pre-merge: `RolloutManager.evaluate_rollout`
+was marking a rollout `completed` even when the OTA push to every canary
+node had failed. See the M6 commit for the fix and regression tests.
+
+**Grafana dashboard**, rendering this run's data:
+
+<!-- screenshot: dashboard/screenshots/fleet-overview.png -->
+
+**Still open**: a real training run against a real dataset
+(`training_pipeline/scripts/train.py` has never executed even once —
+only its pure logic is unit-tested) and drift-triggered rollback against
+a real multi-node fleet (proven only in `control_plane/tests/test_rollout.py`
+against a simulated one).
+
 ## Repository Layout
 
 | Path | Purpose |
