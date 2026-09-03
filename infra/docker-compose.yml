@@ -16,6 +16,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shadowfleet -d shadowfleet"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   control_plane:
     build: ../control_plane
@@ -25,8 +30,16 @@ services:
       SHADOWFLEET_CP_REDIS_URL: redis://redis:6379/0
       SHADOWFLEET_CP_DATABASE_URL: postgresql+psycopg2://shadowfleet:shadowfleet@postgres:5432/shadowfleet
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_started
+      # control_plane crashes on startup (no retry) if Postgres accepts the
+      # TCP connection but hasn't finished initializing yet -- plain
+      # depends_on only waits for the container to start, not for Postgres
+      # to actually be ready to accept connections. This race is why it
+      # was silently exiting on `docker compose up` shortly after a
+      # `down -v`.
+      postgres:
+        condition: service_healthy
 
   edge_agent:
     build: ../edge_agent
