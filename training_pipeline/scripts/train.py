@@ -68,6 +68,16 @@ def main() -> None:
 
     import mlflow
     from ultralytics import YOLO
+    from ultralytics import settings as ultralytics_settings
+
+    # Ultralytics ships its own internal MLflow auto-logger, which runs
+    # concurrently with (and writes to a different tracking store than) the
+    # explicit mlflow.start_run() below. The two collide: Ultralytics'
+    # internal callback loses track of its own run_id between epochs and
+    # raises an uncaught MlflowException, taking the whole script down.
+    # This script does its own explicit MLflow logging, so disable
+    # Ultralytics' redundant internal one before constructing the trainer.
+    ultralytics_settings.update({"mlflow": False})
 
     model = YOLO(args.weights)
     mlflow.set_experiment(args.mlflow_experiment)
