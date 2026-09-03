@@ -89,10 +89,12 @@ version). It's been run end-to-end against real Redis, real Postgres, and
 real inter-service HTTP calls (not just the test suite's fakes) — see the
 M6 section of the commit history for what that caught.
 
-A hosted, standalone demo of just the inference API (no fleet/rollout —
-free tiers can't sustain a multi-container stack continuously) can be
-deployed to Hugging Face Spaces: see
-[`deploy/huggingface-spaces/`](deploy/huggingface-spaces/).
+A standalone, single-container deployment of just the inference API (no
+fleet/rollout — free tiers can't sustain a multi-container stack
+continuously) is built and verified working for Hugging Face Spaces —
+see [`deploy/huggingface-spaces/`](deploy/huggingface-spaces/). It isn't
+pushed to a live Space, since HF's Docker SDK (needed for a plain FastAPI
+container) has moved off the free tier since this scaffold was written.
 
 ## Validation
 

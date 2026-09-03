@@ -34,6 +34,17 @@ Or use the Swagger UI at `/docs`.
 
 This directory is **not** wired to auto-deploy — Spaces needs your own
 Hugging Face account and push access, which this session doesn't have.
+
+**Note**: as of this writing, HF Spaces' Docker SDK (required here — this
+is a plain FastAPI container, not a Gradio/Streamlit app) has moved off
+the free tier; a paid HF plan is needed to actually push this to a live
+Space. The Dockerfile and this deployment procedure are built and
+verified working (both build stages run for real against pinned
+dependencies, matching the numpy/opencv/onnxscript fixes in
+`training_pipeline/requirements-train.txt` — see that fix's commit for
+why those pins matter) — only the final `git push` to an actual Space is
+unpushed, since it's gated on a paid plan this project doesn't have.
+
 Three commands, from the repo root:
 
 ```bash

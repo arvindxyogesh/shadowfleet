@@ -112,9 +112,14 @@ and via GitHub Actions in CI.
 
 - **Local development**: Docker Compose on Linux/macOS/WSL, Python 3.11+.
 - **CI**: GitHub Actions (Ubuntu runners, free tier).
-- **Demo hosting**: Hugging Face Spaces (free) for the inference API + read-only
+- **Demo hosting**: Hugging Face Spaces for the inference API + read-only
   dashboard snapshot; full multi-node fleet simulation runs locally / in CI, since
   free hosting tiers cannot sustain a multi-container fleet continuously.
+  **Update**: as of this writing, HF Spaces' Docker SDK — needed to run a
+  real FastAPI container — has moved off the free tier (Static/Gradio SDKs
+  remain free). `deploy/huggingface-spaces/` is built and verified working
+  but not actually pushed to a live Space as a result; see that
+  directory's README.
 - **Fleet simulation**: `kind` or `k3d` (local Kubernetes) or Docker Compose with N
   replica services — no paid cloud compute required.
 
@@ -229,7 +234,7 @@ and via GitHub Actions in CI.
 | Fleet orchestration | Docker Compose / `k3d` (local Kubernetes) | Free, local |
 | CI/CD & retrain trigger | GitHub Actions | Free for public repos |
 | Dashboard | Grafana + Prometheus (self-hosted via Docker) | Open source |
-| Demo hosting | Hugging Face Spaces | Free tier |
+| Demo hosting | Hugging Face Spaces | Docker SDK moved off the free tier — see §2.4 |
 | Language | Python 3.11 (all services); optional Rust/Go edge agent as stretch goal | — |
 
 ---
