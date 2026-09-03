@@ -117,7 +117,8 @@ node had failed. See the M6 commit for the fix and regression tests.
 
 **Grafana dashboard**, rendering this run's data:
 
-<!-- screenshot: dashboard/screenshots/fleet-overview.png -->
+![Fleet overview: node status, confidence, and latency trends](dashboard/screenshots/fleet-overview-top.png)
+![Fleet overview: disagreement, hard examples, and rollout audit log](dashboard/screenshots/fleet-overview-bottom.png)
 
 **Training pipeline**, run for real on an 8x-H200 GPU box against COCO128
 (`training_pipeline/scripts/train.py`, not just its unit-tested pure logic):
