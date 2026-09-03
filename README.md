@@ -130,11 +130,25 @@ node had failed. See the M6 commit for the fix and regression tests.
 | Exported ONNX artifact | 12.2MB, YOLOv8n |
 | Registry outcome | `Registered model version yolov8n-20260903145654 (promoted=True)` |
 
-**Still open**: drift-triggered rollback against a real multi-node fleet
-is proven only in `control_plane/tests/test_rollout.py` against a
-simulated one — the real two-node compose stack (`edge_agent` +
-`edge_agent_2`) has never actually been driven through a live canary/
-control split with real traffic.
+**Multi-node drift-triggered rollback**, run for real against the two-node
+compose stack (`edge_agent` + `edge_agent_2`) with live traffic and a
+genuinely bad candidate model (an untrained YOLOv8n — see
+`infra/docker-compose.drift-demo.override.yml`), not just the simulated
+fleet in `control_plane/tests/test_rollout.py`:
+
+```
+"status": "rolled_back",
+"reason": "drift detected: canary mean confidence significantly below
+           control (n_canary=25, n_control=21)"
+```
+
+This run caught a second real bug pre-merge: `evaluate_rollout` was
+comparing canary vs. control *production*-model confidence, but canary
+nodes only ever serve a rollout candidate as a *shadow* model during
+evaluation — their prod model, and so their confidence, never changes
+until promotion. The comparison had no way to ever see a real
+regression. Fixed by publishing and comparing the shadow model's own
+confidence instead; see the FR-9 fix commit and its regression test.
 
 ## Repository Layout
 
