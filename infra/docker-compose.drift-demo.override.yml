@@ -23,4 +23,9 @@
 services:
   edge_agent:
     environment:
-      SHADOWFLEET_CONF_THRESHOLD: "0.01"
+      # An untrained YOLO head's objectness bias is initialized around
+      # log(5 / num_classes / (img_size / stride)^2), which for COCO's 80
+      # classes works out to roughly 1e-5 or lower in raw sigmoid
+      # confidence -- 0.01 measured near-zero at every detection and still
+      # let nothing through. Go low enough that float32 noise clears it.
+      SHADOWFLEET_CONF_THRESHOLD: "0.000001"
