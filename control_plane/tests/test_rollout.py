@@ -199,7 +199,17 @@ async def test_evaluate_rollout_rolls_back_on_detected_drift():
         started_at = rollout.started_at
         for i in range(6):
             for node_id in canary_ids:
-                seed_telemetry(session, node_id, 0.2 + i * 0.01, started_at + timedelta(seconds=i))
+                # Canary nodes run the candidate as a shadow model, not
+                # prod, during evaluation -- their own confidence_min stays
+                # whatever the (unchanged) prod model reports. Only
+                # shadow_confidence_min reflects the bad candidate.
+                seed_telemetry(
+                    session,
+                    node_id,
+                    confidence_min=0.85 + i * 0.01,
+                    timestamp=started_at + timedelta(seconds=i),
+                    shadow_confidence_min=0.2 + i * 0.01,
+                )
             for node_id in control_ids:
                 seed_telemetry(session, node_id, 0.85 + i * 0.01, started_at + timedelta(seconds=i))
         session.commit()
@@ -216,6 +226,54 @@ async def test_evaluate_rollout_rolls_back_on_detected_drift():
     roles_called = [call[1] for call in node_client.calls]
     assert "prod" not in roles_called
     assert roles_called.count("shadow") == len(canary_ids)
+
+
+@pytest.mark.asyncio
+async def test_drift_detection_ignores_canary_prod_confidence_and_uses_shadow_confidence():
+    """Canary nodes serve the rollout candidate as a *shadow* model, not
+    prod, throughout evaluation -- their prod model, and therefore their
+    confidence_min, never changes. A candidate model that's actually bad
+    can only show up via shadow_confidence_min. This is a regression test
+    for a bug where evaluate_rollout compared confidence_min on both
+    groups: since canary's confidence_min is unrelated to the candidate,
+    that comparison could never detect a real regression (and could only
+    ever fire on coincidental noise), making FR-9 dead in practice.
+    """
+    session_factory = create_session_factory("sqlite:///:memory:")
+    node_client = FakeNodeClient()
+    manager = _make_manager(node_client)
+
+    with session_factory() as session:
+        for i in range(4):
+            seed_node(session, f"node-{i}")
+        session.commit()
+
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 50, 300)
+        node_client.calls.clear()
+
+        canary_ids, control_ids = manager._node_ids(session, rollout.id)
+        started_at = rollout.started_at
+        for i in range(6):
+            for node_id in canary_ids:
+                # Canary's own (prod) confidence_min looks *bad*, but the
+                # actual candidate (shadow_confidence_min) is fine -- a
+                # correct implementation must not roll back on this.
+                seed_telemetry(
+                    session,
+                    node_id,
+                    confidence_min=0.2 + i * 0.01,
+                    timestamp=started_at + timedelta(seconds=i),
+                    shadow_confidence_min=0.85 + i * 0.01,
+                )
+            for node_id in control_ids:
+                seed_telemetry(session, node_id, 0.85 + i * 0.01, started_at + timedelta(seconds=i))
+        session.commit()
+
+        past_window = started_at + timedelta(seconds=301)
+        await manager.evaluate_rollout(session, rollout, now=past_window)
+
+        session.refresh(rollout)
+        assert rollout.status == "completed"
 
 
 @pytest.mark.asyncio

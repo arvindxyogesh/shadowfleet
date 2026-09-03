@@ -27,6 +27,7 @@ class TelemetryEventOut(BaseModel):
     prod_model_version: str | None
     shadow_model_version: str | None
     confidence_min: float | None
+    shadow_confidence_min: float | None
     disagreement_score: float | None
     latency_ms: float | None
 

@@ -87,6 +87,7 @@ class TelemetryConsumer:
             node.base_url = event["base_url"]
 
         confidence_min = event.get("confidence_min")
+        shadow_confidence_min = event.get("shadow_confidence_min")
         disagreement_score = event.get("disagreement_score")
 
         session.add(
@@ -98,6 +99,7 @@ class TelemetryConsumer:
                 prod_model_version=event.get("prod_model_version"),
                 shadow_model_version=event.get("shadow_model_version"),
                 confidence_min=confidence_min,
+                shadow_confidence_min=shadow_confidence_min,
                 disagreement_score=disagreement_score,
                 latency_ms=event.get("latency_ms"),
                 raw_payload=event,

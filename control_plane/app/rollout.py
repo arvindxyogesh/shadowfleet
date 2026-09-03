@@ -115,8 +115,16 @@ class RolloutManager:
 
         canary_ids, control_ids = self._node_ids(session, rollout.id)
 
-        canary_confidences = self._recent_confidences(session, canary_ids, rollout.started_at)
-        control_confidences = self._recent_confidences(session, control_ids, rollout.started_at)
+        # Canary nodes serve the candidate only as a shadow model during
+        # evaluation -- their own confidence_min is still the *unchanged*
+        # production model's, same as control's. shadow_confidence_min is
+        # the only column that carries the candidate's actual behavior.
+        canary_confidences = self._recent_confidences(
+            session, canary_ids, rollout.started_at, TelemetryEvent.shadow_confidence_min
+        )
+        control_confidences = self._recent_confidences(
+            session, control_ids, rollout.started_at, TelemetryEvent.confidence_min
+        )
 
         if detect_confidence_regression(
             canary_confidences,
@@ -270,15 +278,15 @@ class RolloutManager:
         control = [a.node_id for a in assignments if a.role == "control"]
         return canary, control
 
-    def _recent_confidences(self, session: Session, node_ids: list[str], since: datetime) -> list[float]:
+    def _recent_confidences(self, session: Session, node_ids: list[str], since: datetime, column) -> list[float]:
         if not node_ids:
             return []
         rows = (
             session.execute(
-                select(TelemetryEvent.confidence_min).where(
+                select(column).where(
                     TelemetryEvent.node_id.in_(node_ids),
                     TelemetryEvent.timestamp >= since,
-                    TelemetryEvent.confidence_min.is_not(None),
+                    column.is_not(None),
                 )
             )
             .scalars()

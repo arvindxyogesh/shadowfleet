@@ -94,8 +94,14 @@ A background task in the same process re-checks every
    `GitHubActionsRetrainDispatcher` needs a repo + token this project's
    test suite and free-tier demo never require.
 2. **Rollout evaluation** (`app/rollout.py`): for every rollout in
-   `shadow` status, compares canary vs. control node confidence
-   (`app/drift.py`, a one-sided Welch's t-test) since the rollout started.
+   `shadow` status, compares the canary group's *shadow* model confidence
+   (`shadow_confidence_min` — the candidate, which canary nodes serve
+   alongside prod without it ever being returned to callers) against the
+   control group's *prod* confidence (`confidence_min` — the currently
+   deployed model), via `app/drift.py`'s one-sided Welch's t-test since
+   the rollout started. Canary's own `confidence_min` is deliberately
+   never used for this: it's still the unchanged prod model throughout
+   evaluation, so it carries no signal about the candidate at all.
    Detected regression → automatic rollback (FR-9). No regression and the
    evaluation window has elapsed → all canary nodes promoted to
    production atomically (FR-8), rollout marked `completed`.

@@ -161,11 +161,13 @@ async def infer(
 
     shadow_detections = None
     disagreement_score = None
+    shadow_confidence_min = None
     if shadow_model is not None:
         shadow_detections, _, _, _ = shadow_model.predict(
             image, settings.conf_threshold, settings.iou_threshold, settings.max_detections
         )
         disagreement_score = compute_disagreement(detections, shadow_detections)
+        shadow_confidence_min = min((d["score"] for d in shadow_detections), default=None)
     else:
         shadow_model_version = None
 
@@ -182,6 +184,7 @@ async def infer(
         "shadow_model_version": shadow_model_version,
         "shadow_prediction": shadow_detections,
         "confidence_min": confidence_min,
+        "shadow_confidence_min": shadow_confidence_min,
         "disagreement_score": disagreement_score,
         "latency_ms": latency_ms,
     }

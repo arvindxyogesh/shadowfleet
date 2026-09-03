@@ -36,6 +36,14 @@ class TelemetryEvent(Base):
     prod_model_version: Mapped[str | None] = mapped_column(String, nullable=True)
     shadow_model_version: Mapped[str | None] = mapped_column(String, nullable=True)
     confidence_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # The shadow model's own min confidence on this same input, when a
+    # shadow model is loaded (dual-model canary nodes only). Rollout drift
+    # detection (FR-9) needs this to compare the *candidate* model's
+    # behavior against control -- confidence_min alone is always the
+    # production model's, which is unchanged on canary nodes until a
+    # rollout actually promotes, so it carries no signal about the
+    # candidate at all.
+    shadow_confidence_min: Mapped[float | None] = mapped_column(Float, nullable=True)
     disagreement_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     raw_payload: Mapped[dict] = mapped_column(JSON)

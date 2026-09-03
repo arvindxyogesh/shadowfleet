@@ -27,7 +27,7 @@ def seed_node(session, node_id, base_url="", prod_version="v1", last_seen=None):
     )
 
 
-def seed_telemetry(session, node_id, confidence_min, timestamp, event_id=None):
+def seed_telemetry(session, node_id, confidence_min, timestamp, event_id=None, shadow_confidence_min=None):
     import uuid
 
     from control_plane.app.db import TelemetryEvent
@@ -41,6 +41,7 @@ def seed_telemetry(session, node_id, confidence_min, timestamp, event_id=None):
             prod_model_version="v1",
             shadow_model_version=None,
             confidence_min=confidence_min,
+            shadow_confidence_min=shadow_confidence_min,
             disagreement_score=None,
             latency_ms=10.0,
             raw_payload={},
