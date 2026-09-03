@@ -1,0 +1,242 @@
+{
+  "id": null,
+  "uid": "shadowfleet-fleet-overview",
+  "title": "ShadowFleet – Fleet Overview",
+  "description": "Fleet health, telemetry trends, and hard-example mining status (FR-10).",
+  "tags": ["shadowfleet"],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Nodes",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS value FROM fleet_nodes;"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Online Nodes",
+      "description": "Reported telemetry within the last 120s.",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS value FROM fleet_nodes WHERE last_seen > (NOW() AT TIME ZONE 'UTC') - INTERVAL '120 seconds';"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] } },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Pending Hard Examples",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS value FROM hard_examples WHERE status = 'pending';"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Labeled Hard Examples",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT COUNT(*) AS value FROM hard_examples WHERE status = 'labeled';"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Fleet Nodes",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT node_id AS \"Node\", prod_model_version AS \"Prod Model\", shadow_model_version AS \"Shadow Model\", last_seen AS \"Last Seen\", CASE WHEN last_seen > (NOW() AT TIME ZONE 'UTC') - INTERVAL '120 seconds' THEN 'online' ELSE 'stale' END AS \"Status\" FROM fleet_nodes ORDER BY node_id;"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Avg Production Confidence by Node",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroup(\"timestamp\", '1m') AS time, node_id AS metric, AVG(confidence_min) AS value FROM telemetry_events WHERE $__timeFilter(\"timestamp\") AND confidence_min IS NOT NULL GROUP BY 1, 2 ORDER BY 1;"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Avg Inference Latency by Node",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroup(\"timestamp\", '1m') AS time, node_id AS metric, AVG(latency_ms) AS value FROM telemetry_events WHERE $__timeFilter(\"timestamp\") AND latency_ms IS NOT NULL GROUP BY 1, 2 ORDER BY 1;"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Avg Prod/Shadow Disagreement by Node",
+      "description": "Only populated on nodes running a shadow model.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroup(\"timestamp\", '1m') AS time, node_id AS metric, AVG(disagreement_score) AS value FROM telemetry_events WHERE $__timeFilter(\"timestamp\") AND disagreement_score IS NOT NULL GROUP BY 1, 2 ORDER BY 1;"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Hard Examples Flagged Over Time",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroup(flagged_at, '1m') AS time, reason AS metric, COUNT(*) AS value FROM hard_examples WHERE $__timeFilter(flagged_at) GROUP BY 1, 2 ORDER BY 1;"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 10,
+      "type": "piechart",
+      "title": "Hard Examples by Status",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT status, COUNT(*) AS count FROM hard_examples GROUP BY status;"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] } }
+    },
+    {
+      "id": 11,
+      "type": "piechart",
+      "title": "Hard Examples by Reason",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT reason, COUNT(*) AS count FROM hard_examples GROUP BY reason;"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "values": ["value", "percent"] } }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Rollouts",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT id AS \"ID\", model_version AS \"Model Version\", status AS \"Status\", target_percentage AS \"Target %\", started_at AS \"Started\", ended_at AS \"Ended\", reason AS \"Reason\" FROM rollouts ORDER BY started_at DESC LIMIT 20;"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {}
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Recent Audit Log",
+      "description": "Every automatic and manual rollout/retrain action (FR-11).",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "postgres", "uid": "shadowfleet-postgres" },
+          "format": "table",
+          "rawSql": "SELECT timestamp AS \"Time\", actor AS \"Actor\", action AS \"Action\" FROM audit_log ORDER BY timestamp DESC LIMIT 20;"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": {}
+    }
+  ]
+}

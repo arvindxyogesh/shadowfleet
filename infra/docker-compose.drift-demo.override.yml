@@ -1,0 +1,31 @@
+
+# Layers onto docker-compose.yml for demonstrating a real drift-triggered
+# rollback (FR-9) against a genuinely bad candidate model, e.g. an
+# untrained YOLOv8n exported via
+#   python edge_agent/scripts/export_model.py --weights yolov8n.yaml --output edge_agent/models/v2-bad.onnx
+#
+# A freshly-initialized YOLO head's objectness bias is deliberately
+# initialized very negative (standard detector init, so early training
+# isn't swamped by false positives), so an untrained model doesn't
+# produce *low-confidence* detections -- it produces *no* detections
+# above the default 0.25 confidence threshold at all, on almost any
+# input. confidence_min is None whenever there are zero detections, so
+# a silent model contributes nothing to the drift statistic rather than
+# dragging it down. Lowering the canary node's threshold here lets that
+# same weak, near-random signal actually clear the bar as real (bad)
+# detections, so the Welch's t-test in app/drift.py has something to see.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.drift-demo.override.yml up -d edge_agent
+# Revert to the normal threshold once done:
+#   docker compose -f docker-compose.yml up -d edge_agent
+
+services:
+  edge_agent:
+    environment:
+      # An untrained YOLO head's objectness bias is initialized around
+      # log(5 / num_classes / (img_size / stride)^2), which for COCO's 80
+      # classes works out to roughly 1e-5 or lower in raw sigmoid
+      # confidence -- 0.01 measured near-zero at every detection and still
+      # let nothing through. Go low enough that float32 noise clears it.
+      SHADOWFLEET_CONF_THRESHOLD: "0.000001"

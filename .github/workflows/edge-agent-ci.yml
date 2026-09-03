@@ -1,0 +1,32 @@
+name: edge_agent CI
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "edge_agent/**"
+      - "pytest.ini"
+      - ".github/workflows/edge-agent-ci.yml"
+  pull_request:
+    paths:
+      - "edge_agent/**"
+      - "pytest.ini"
+      - ".github/workflows/edge-agent-ci.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: edge_agent/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r edge_agent/requirements-dev.txt
+
+      - name: Run tests
+        run: pytest edge_agent/tests -v

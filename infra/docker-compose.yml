@@ -1,0 +1,98 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: shadowfleet
+      POSTGRES_USER: shadowfleet
+      POSTGRES_PASSWORD: shadowfleet
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shadowfleet -d shadowfleet"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  control_plane:
+    build: ../control_plane
+    ports:
+      - "8001:8001"
+    environment:
+      SHADOWFLEET_CP_REDIS_URL: redis://redis:6379/0
+      SHADOWFLEET_CP_DATABASE_URL: postgresql+psycopg2://shadowfleet:shadowfleet@postgres:5432/shadowfleet
+    depends_on:
+      redis:
+        condition: service_started
+      # control_plane crashes on startup (no retry) if Postgres accepts the
+      # TCP connection but hasn't finished initializing yet -- plain
+      # depends_on only waits for the container to start, not for Postgres
+      # to actually be ready to accept connections. This race is why it
+      # was silently exiting on `docker compose up` shortly after a
+      # `down -v`.
+      postgres:
+        condition: service_healthy
+
+  edge_agent:
+    build: ../edge_agent
+    ports:
+      - "8000:8000"
+    environment:
+      SHADOWFLEET_NODE_ID: node-1
+      SHADOWFLEET_REDIS_URL: redis://redis:6379/0
+      SHADOWFLEET_MODEL_PATH: /app/models/yolov8n.onnx
+      # Lets control_plane's rollout manager reach this node's /admin/model
+      # endpoint for OTA pushes (FR-8) -- the compose network resolves
+      # service names, so this is reachable from the control_plane container.
+      SHADOWFLEET_SELF_BASE_URL: http://edge_agent:8000
+    volumes:
+      - ../edge_agent/models:/app/models:ro
+    depends_on:
+      - redis
+
+  # A second, distinguishable node -- `docker compose up --scale edge_agent=N`
+  # can't do this on its own, since every replica of the same service shares
+  # one DNS name, so SHADOWFLEET_SELF_BASE_URL would collide. With two named
+  # services, a canary rollout has an actual control group to compare
+  # against, so drift detection (FR-9) has something real to exercise.
+  edge_agent_2:
+    build: ../edge_agent
+    ports:
+      - "8002:8000"
+    environment:
+      SHADOWFLEET_NODE_ID: node-2
+      SHADOWFLEET_REDIS_URL: redis://redis:6379/0
+      SHADOWFLEET_MODEL_PATH: /app/models/yolov8n.onnx
+      SHADOWFLEET_SELF_BASE_URL: http://edge_agent_2:8000
+    volumes:
+      - ../edge_agent/models:/app/models:ro
+    depends_on:
+      - redis
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: shadowfleet
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ../dashboard/provisioning:/etc/grafana/provisioning
+      - ../dashboard/dashboards:/etc/grafana/provisioning/dashboards/json
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - postgres
+      - control_plane
+
+volumes:
+  postgres_data:
+  grafana_data:

@@ -1,0 +1,25 @@
+# Only needed to run scripts/train.py locally with real data/network —
+# deliberately kept out of requirements.txt so the importable app/ package
+# (dataset merging, promotion logic, registry) stays lightweight.
+-r requirements.txt
+ultralytics==8.3.28
+mlflow==2.17.2
+requests==2.32.3
+# ultralytics==8.3.28 calls the removed numpy.trapz internally (renamed to
+# numpy.trapezoid in NumPy 2.0); pip resolves numpy unpinned otherwise,
+# which grabs latest 2.x and crashes mid-validation. Cap below 2.0 to match
+# what 8.3.28 was actually built against.
+numpy<2.0
+# scripts/train.py calls model.export(format="onnx"). Left unpinned, none of
+# these are installed until Ultralytics' internal "requirements AutoUpdate"
+# pip-installs them mid-run -- in its own isolated pip call, with no numpy
+# constraint, so it silently re-upgrades numpy past the pin above right
+# before export. Pinning them here puts them in the same resolver pass as
+# numpy<2.0 instead. onnxscript is also required unconditionally by
+# torch's ONNX exporter on newer torch releases and AutoUpdate doesn't
+# install it at all, so export fails on ModuleNotFoundError even after
+# the AutoUpdate step "succeeds".
+onnx>=1.12.0
+onnxslim
+onnxruntime-gpu
+onnxscript

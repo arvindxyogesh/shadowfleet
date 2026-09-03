@@ -1,10 +1,97 @@
 # edge_agent
 
-Simulated fleet node. Runs the current production detection model (and,
-optionally, a shadow candidate model) on input frames, returns production
-predictions to callers, and emits telemetry for every inference call.
+Simulated fleet node. Runs the current production detection model on input
+frames and returns predictions; optionally runs a second "shadow" candidate
+model on the same input and logs (but never serves) its output. Every
+inference call emits a telemetry event to the fleet's Redis Stream. Its
+model versions can be hot-swapped at runtime via `/admin/model` — the
+control plane's rollout manager calls this to push canary/production
+model updates without restarting the node. Implements FR-1, FR-2, the
+producer side of FR-3, and the OTA mechanism behind FR-8 from
+`../docs/SRS.md`.
 
-Implements: FR-1 (inference service), FR-2 (shadow mode), FR-3 (telemetry
-streaming). See `../docs/SRS.md` for full requirements.
+## Stack
 
-Planned stack: FastAPI + onnxruntime, one container per simulated node.
+FastAPI + ONNX Runtime (CPU), YOLOv8n by default, Redis Streams for
+telemetry. No GPU dependency.
+
+## Setup
+
+1. Export a model to ONNX (one-time, needs network + the `ultralytics` package,
+   which is intentionally **not** in `requirements.txt` since the runtime
+   service doesn't need it):
+
+   ```bash
+   pip install ultralytics
+   python scripts/export_model.py --output models/yolov8n.onnx
+   ```
+
+2. Install runtime dependencies and run the service:
+
+   ```bash
+   pip install -r requirements.txt
+   SHADOWFLEET_MODEL_PATH=models/yolov8n.onnx \
+   SHADOWFLEET_REDIS_URL=redis://localhost:6379/0 \
+   uvicorn app.main:app --reload
+   ```
+
+   To also run a shadow candidate (e.g. a retrained version being
+   evaluated), export a second ONNX file and set:
+
+   ```bash
+   SHADOWFLEET_SHADOW_MODEL_PATH=models/yolov8n-candidate.onnx
+   SHADOWFLEET_SHADOW_MODEL_VERSION=yolov8n-candidate-v2
+   ```
+
+   Telemetry publishing is best-effort — if Redis is unreachable, `/infer`
+   still serves predictions normally; the failure is only logged.
+
+3. Try it:
+
+   ```bash
+   curl http://localhost:8000/health
+   curl -X POST http://localhost:8000/infer -F "file=@/path/to/image.jpg"
+   ```
+
+If no model file is found at `SHADOWFLEET_MODEL_PATH`, the service still
+starts and `/health` reports `degraded` — `/infer` returns `503` rather than
+crashing, which is deliberate (a fleet node with a bad/missing model artifact
+should fail loudly on that one endpoint, not take the process down).
+
+## Runtime model hot-swap (OTA)
+
+```bash
+curl -X POST http://localhost:8000/admin/model \
+  -H 'Content-Type: application/json' \
+  -d '{"role": "prod", "model_version": "yolov8n-v2", "model_path": "models/v2.onnx"}'
+```
+
+`role` is `"prod"` or `"shadow"`; setting `role: "shadow"` with
+`model_path: null` clears the shadow model. A failed load (bad path,
+corrupt file) returns `400` and leaves the currently running model
+untouched — the node keeps serving. This is exactly what
+`control_plane`'s rollout manager calls to push canary and production
+updates (see `../control_plane/README.md`'s "Closed loop" section); set
+`SHADOWFLEET_SELF_BASE_URL` to this node's reachable address so it can be
+reached for pushes and appears correctly in telemetry.
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests -v
+```
+
+Tests never require real model weights or a real Redis instance:
+postprocessing (NMS, box decoding, letterbox-unwarping) and disagreement
+scoring are tested directly against synthetic arrays, and the API layer is
+tested with `FakeModel`/`FakeTelemetryPublisher` injected via FastAPI's
+dependency override, so CI runs with zero network access and zero large
+downloads.
+
+## Docker
+
+```bash
+docker build -t shadowfleet-edge-agent .
+docker run -p 8000:8000 -v $(pwd)/models:/app/models shadowfleet-edge-agent
+```

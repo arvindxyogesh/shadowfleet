@@ -1,9 +1,41 @@
 # dashboard
 
-Grafana provisioning (dashboards + datasources) and any custom panels needed
-to visualize fleet state, per-node model version, rollout progress, and
-drift/rollback events sourced from the control plane's metrics endpoint.
+Grafana provisioning for the fleet-overview dashboard (FR-10 from
+`../docs/SRS.md`): fleet node status, telemetry trends, and hard-example
+mining counts.
 
-Implements: FR-10. See `../docs/SRS.md` §5.1.
+## How it's wired
 
-Planned stack: Grafana + Prometheus, both self-hosted via Docker.
+Grafana connects **directly to `control_plane`'s Postgres database** as a
+native datasource — no extra metrics-exporter code needed, since the data
+the dashboard needs (`fleet_nodes`, `telemetry_events`, `hard_examples`)
+already lands there via the consumer (M2/M3). Panels are plain SQL against
+those tables, using Grafana's `$__timeFilter`/`$__timeGroup` macros so they
+respect the dashboard's time-range picker and auto-refresh.
+
+- `provisioning/datasources/postgres.yml` — points Grafana at the
+  `control_plane` Postgres instance
+- `provisioning/dashboards/dashboards.yml` — tells Grafana to load any
+  dashboard JSON found under `dashboards/`
+- `dashboards/fleet-overview.json` — the dashboard itself: node status
+  table, avg confidence/latency/disagreement time series per node,
+  hard-example counts by status and reason, and (M5) a rollouts table and
+  the recent audit log. Refreshes every 10s.
+
+## Running it
+
+Part of the full stack — see `../infra/docker-compose.yml`:
+
+```bash
+cd ../infra
+docker compose up --build
+```
+
+Then open http://localhost:3000 — anonymous viewer access is enabled for
+local convenience (`GF_AUTH_ANONYMOUS_ENABLED`), or log in as
+`admin`/`shadowfleet` to edit. The dashboard is provisioned automatically;
+no manual datasource or import step required.
+
+Panels will show a "relation does not exist" error until `control_plane`
+has started at least once and created its schema — normal on a very first
+`docker compose up` if Grafana's container finishes starting first.

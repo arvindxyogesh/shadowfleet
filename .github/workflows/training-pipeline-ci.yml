@@ -1,0 +1,32 @@
+name: training_pipeline CI
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "training_pipeline/**"
+      - "pytest.ini"
+      - ".github/workflows/training-pipeline-ci.yml"
+  pull_request:
+    paths:
+      - "training_pipeline/**"
+      - "pytest.ini"
+      - ".github/workflows/training-pipeline-ci.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: training_pipeline/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r training_pipeline/requirements-dev.txt
+
+      - name: Run tests
+        run: pytest training_pipeline/tests -v
