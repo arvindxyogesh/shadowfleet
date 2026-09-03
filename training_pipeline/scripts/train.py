@@ -25,7 +25,14 @@ does the record-level merge once inputs are in a common in-memory form.
 """
 
 import argparse
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
+
+# Running this file directly only puts its own directory (scripts/) on
+# sys.path, not its parent -- add training_pipeline/ so `app` resolves
+# regardless of the caller's cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.dataset import select_labeled_hard_examples
 from app.evaluation import ModelMetrics
