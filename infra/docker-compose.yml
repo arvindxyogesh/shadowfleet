@@ -45,6 +45,25 @@ services:
     depends_on:
       - redis
 
+  # A second, distinguishable node -- `docker compose up --scale edge_agent=N`
+  # can't do this on its own, since every replica of the same service shares
+  # one DNS name, so SHADOWFLEET_SELF_BASE_URL would collide. With two named
+  # services, a canary rollout has an actual control group to compare
+  # against, so drift detection (FR-9) has something real to exercise.
+  edge_agent_2:
+    build: ../edge_agent
+    ports:
+      - "8002:8000"
+    environment:
+      SHADOWFLEET_NODE_ID: node-2
+      SHADOWFLEET_REDIS_URL: redis://redis:6379/0
+      SHADOWFLEET_MODEL_PATH: /app/models/yolov8n.onnx
+      SHADOWFLEET_SELF_BASE_URL: http://edge_agent_2:8000
+    volumes:
+      - ../edge_agent/models:/app/models:ro
+    depends_on:
+      - redis
+
   grafana:
     image: grafana/grafana:11.2.0
     ports:

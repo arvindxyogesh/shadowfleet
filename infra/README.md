@@ -4,9 +4,10 @@ Deployment glue for running the fleet locally.
 
 ## `docker-compose.yml`
 
-Brings up the full stack through M4: Redis (telemetry bus), Postgres
-(control-plane + dashboard storage), `control_plane`, one `edge_agent`
-node, and Grafana (dashboard).
+Brings up the full stack: Redis (telemetry bus), Postgres (control-plane +
+dashboard storage), `control_plane`, two `edge_agent` nodes (`edge_agent`
+on :8000, `edge_agent_2` on :8002 — enough for a canary rollout to have a
+real control group), and Grafana (dashboard).
 
 ```bash
 # one-time: produce the ONNX weights the edge_agent container mounts
@@ -45,14 +46,13 @@ update on its own within a few seconds.
    http://localhost:8001/rollouts/{id}` — after the evaluation window
    with no detected drift, its canary node is promoted and the rollout
    moves to `completed`. `GET /audit-log` shows every step.
-4. With only one `edge_agent` replica in this compose file, there's no
-   separate control group to compare against, so drift-triggered rollback
-   won't fire on its own here — it's exercised in
-   `control_plane/tests/test_rollout.py` against a fake multi-node fleet.
-   You can still try `POST /rollouts/{id}/rollback` manually at any point.
+4. With `target_percentage: 100` above, both nodes go to canary and there's
+   no control group. Use e.g. `"target_percentage": 50` with traffic sent
+   to *both* `:8000/infer` and `:8002/infer` to get a real canary/control
+   split — that's what lets FR-9's drift detection (Welch's t-test on
+   canary vs. control confidence) actually have something to compare, not
+   just the fake multi-node fleet in `control_plane/tests/test_rollout.py`.
 
-Scaling the simulated fleet to multiple distinguishable nodes (today's
-`SHADOWFLEET_SELF_BASE_URL` maps every replica to the same compose service
-name) and a GitHub Actions deploy workflow land in a later milestone — see
+A GitHub Actions deploy workflow lands in a later milestone — see
 `../docs/SRS.md` §10 for the roadmap and §6.7 for the free-tier cost
 constraint every piece here must respect.
