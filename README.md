@@ -119,11 +119,22 @@ node had failed. See the M6 commit for the fix and regression tests.
 
 <!-- screenshot: dashboard/screenshots/fleet-overview.png -->
 
-**Still open**: a real training run against a real dataset
-(`training_pipeline/scripts/train.py` has never executed even once —
-only its pure logic is unit-tested) and drift-triggered rollback against
-a real multi-node fleet (proven only in `control_plane/tests/test_rollout.py`
-against a simulated one).
+**Training pipeline**, run for real on an 8x-H200 GPU box against COCO128
+(`training_pipeline/scripts/train.py`, not just its unit-tested pure logic):
+
+| Metric | Value |
+|---|---|
+| Epochs / dataset | 3 epochs, COCO128 (128 images, 80 classes) |
+| mAP50 (final validation) | 0.629 |
+| Precision / Recall | 0.665 / 0.534 |
+| Exported ONNX artifact | 12.2MB, YOLOv8n |
+| Registry outcome | `Registered model version yolov8n-20260903145654 (promoted=True)` |
+
+**Still open**: drift-triggered rollback against a real multi-node fleet
+is proven only in `control_plane/tests/test_rollout.py` against a
+simulated one — the real two-node compose stack (`edge_agent` +
+`edge_agent_2`) has never actually been driven through a live canary/
+control split with real traffic.
 
 ## Repository Layout
 
