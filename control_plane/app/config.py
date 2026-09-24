@@ -31,5 +31,11 @@ class Settings(BaseSettings):
     drift_min_effect_size: float = 0.05
     drift_t_stat_threshold: float = 1.645
 
+    # NFR-8: shared secret required as X-Service-Token on every write
+    # endpoint, and sent on outbound OTA pushes to edge_agent nodes (which
+    # must be configured with the same value). Empty means unset, which
+    # rejects every write request rather than leaving the endpoints open.
+    service_token: str = ""
+
 
 settings = Settings()

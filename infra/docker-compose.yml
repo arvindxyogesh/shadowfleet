@@ -29,6 +29,13 @@ services:
     environment:
       SHADOWFLEET_CP_REDIS_URL: redis://redis:6379/0
       SHADOWFLEET_CP_DATABASE_URL: postgresql+psycopg2://shadowfleet:shadowfleet@postgres:5432/shadowfleet
+      # NFR-8: one shared secret for every service. Required as
+      # X-Service-Token on control_plane's write endpoints and sent on its
+      # OTA pushes to each edge_agent's /admin/model, so all three services
+      # below must get the same value. The fallback is for local demos
+      # only -- set SHADOWFLEET_SERVICE_TOKEN in a gitignored infra/.env
+      # (NFR-10) for anything real.
+      SHADOWFLEET_CP_SERVICE_TOKEN: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}
     depends_on:
       redis:
         condition: service_started
@@ -53,6 +60,7 @@ services:
       # endpoint for OTA pushes (FR-8) -- the compose network resolves
       # service names, so this is reachable from the control_plane container.
       SHADOWFLEET_SELF_BASE_URL: http://edge_agent:8000
+      SHADOWFLEET_SERVICE_TOKEN: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}
     volumes:
       - ../edge_agent/models:/app/models:ro
     depends_on:
@@ -72,6 +80,7 @@ services:
       SHADOWFLEET_REDIS_URL: redis://redis:6379/0
       SHADOWFLEET_MODEL_PATH: /app/models/yolov8n.onnx
       SHADOWFLEET_SELF_BASE_URL: http://edge_agent_2:8000
+      SHADOWFLEET_SERVICE_TOKEN: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}
     volumes:
       - ../edge_agent/models:/app/models:ro
     depends_on:

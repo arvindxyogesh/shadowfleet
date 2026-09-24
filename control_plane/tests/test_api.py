@@ -1,9 +1,13 @@
 from datetime import datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
+from control_plane.app.config import settings
 from control_plane.app.db import FleetNode, HardExample, TelemetryEvent, create_session_factory
 from control_plane.app.main import app, get_session
+
+AUTH_HEADERS = {"X-Service-Token": settings.service_token}
 
 
 def _seeded_session_factory():
@@ -155,7 +159,7 @@ def test_list_hard_examples_filters_by_status():
 def test_label_hard_example_marks_it_labeled():
     app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
     try:
-        with TestClient(app) as client:
+        with TestClient(app, headers=AUTH_HEADERS) as client:
             resp = client.post("/hard-examples/hard-1/label", json={"label": {"boxes": [1, 2, 3]}})
     finally:
         app.dependency_overrides.clear()
@@ -169,7 +173,7 @@ def test_label_hard_example_marks_it_labeled():
 def test_label_hard_example_404_for_unknown_input():
     app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
     try:
-        with TestClient(app) as client:
+        with TestClient(app, headers=AUTH_HEADERS) as client:
             resp = client.post("/hard-examples/does-not-exist/label", json={"label": {}})
     finally:
         app.dependency_overrides.clear()
@@ -184,7 +188,7 @@ def test_start_rollout_then_list_and_get_it():
     # test_rollout.py against a fake node client).
     app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
     try:
-        with TestClient(app) as client:
+        with TestClient(app, headers=AUTH_HEADERS) as client:
             start_resp = client.post(
                 "/rollouts",
                 json={"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100},
@@ -218,7 +222,7 @@ def test_get_rollout_404_for_unknown_id():
 def test_rollout_pause_resume_and_rollback_endpoints():
     app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
     try:
-        with TestClient(app) as client:
+        with TestClient(app, headers=AUTH_HEADERS) as client:
             start_resp = client.post(
                 "/rollouts",
                 json={"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100},
@@ -252,7 +256,7 @@ def test_start_rollout_with_no_fleet_nodes_returns_400():
     empty_session_factory = create_session_factory("sqlite:///:memory:")
     app.dependency_overrides[get_session] = _override_session(empty_session_factory)
     try:
-        with TestClient(app) as client:
+        with TestClient(app, headers=AUTH_HEADERS) as client:
             resp = client.post(
                 "/rollouts", json={"model_version": "v2", "model_path": "models/v2.onnx"}
             )
@@ -265,7 +269,7 @@ def test_start_rollout_with_no_fleet_nodes_returns_400():
 def test_pause_a_never_started_rollout_returns_400():
     app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
     try:
-        with TestClient(app) as client:
+        with TestClient(app, headers=AUTH_HEADERS) as client:
             start_resp = client.post(
                 "/rollouts",
                 json={"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100},
@@ -278,3 +282,67 @@ def test_pause_a_never_started_rollout_returns_400():
         app.dependency_overrides.clear()
 
     assert second_pause_resp.status_code == 400
+
+
+WRITE_ENDPOINTS = [
+    ("/hard-examples/hard-1/label", {"label": {"boxes": []}}),
+    ("/rollouts", {"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100}),
+    ("/rollouts/1/pause", {"actor": "mallory"}),
+    ("/rollouts/1/resume", {"actor": "mallory"}),
+    ("/rollouts/1/rollback", {"actor": "mallory", "reason": "unauthenticated"}),
+]
+
+
+@pytest.mark.parametrize("headers", [{}, {"X-Service-Token": "wrong-token"}], ids=["missing", "wrong"])
+@pytest.mark.parametrize("path,body", WRITE_ENDPOINTS, ids=[path for path, _ in WRITE_ENDPOINTS])
+def test_write_endpoints_reject_missing_or_wrong_service_token(path, body, headers):
+    session_factory = _seeded_session_factory()
+    app.dependency_overrides[get_session] = _override_session(session_factory)
+    try:
+        with TestClient(app, headers=AUTH_HEADERS) as authed_client:
+            # A real rollout for the pause/resume/rollback paths to target,
+            # so a 401 can't be confused with a 404.
+            assert authed_client.post(
+                "/rollouts",
+                json={"model_version": "v1b", "model_path": "models/v1b.onnx", "target_percentage": 100},
+            ).status_code == 201
+        with TestClient(app) as client:
+            resp = client.post(path, json=body, headers=headers)
+            rollouts = client.get("/rollouts").json()
+            hard_examples = client.get("/hard-examples", params={"status": "pending"}).json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 401
+    # Nothing was written: still exactly the one rollout, still in shadow,
+    # and hard-1 is still unlabeled.
+    assert [(r["model_version"], r["status"]) for r in rollouts] == [("v1b", "shadow")]
+    assert [ex["input_id"] for ex in hard_examples] == ["hard-1"]
+
+
+def test_write_endpoints_reject_everything_when_no_token_is_configured(monkeypatch):
+    monkeypatch.setattr(settings, "service_token", "")
+    app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
+    try:
+        with TestClient(app) as client:
+            resp = client.post(
+                "/hard-examples/hard-1/label", json={"label": {}}, headers={"X-Service-Token": ""}
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 401
+
+
+def test_read_endpoints_stay_unauthenticated():
+    app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
+    try:
+        with TestClient(app) as client:
+            statuses = [
+                client.get(path).status_code
+                for path in ("/health", "/fleet/nodes", "/hard-examples", "/rollouts", "/audit-log")
+            ]
+    finally:
+        app.dependency_overrides.clear()
+
+    assert statuses == [200] * 5

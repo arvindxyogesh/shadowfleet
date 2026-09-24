@@ -17,6 +17,12 @@ python ../edge_agent/scripts/export_model.py --output ../edge_agent/models/yolov
 docker compose up --build
 ```
 
+Write endpoints (`control_plane`'s `POST`s and each node's `/admin/model`)
+require a shared service token (SRS NFR-8) in an `X-Service-Token` header.
+Compose passes one `SHADOWFLEET_SERVICE_TOKEN` to all three app services,
+falling back to `shadowfleet-dev-token` for local demos; set your own in a
+gitignored `infra/.env` (`SHADOWFLEET_SERVICE_TOKEN=...`) for anything real.
+
 - edge_agent: http://localhost:8000 (`/health`, `/infer`)
 - control_plane: http://localhost:8001 (`/health`, `/fleet/nodes`,
   `/fleet/nodes/{id}/telemetry`, `/hard-examples`)
@@ -34,7 +40,9 @@ update on its own within a few seconds.
    under a new name works for exercising the mechanism).
 2. Start a rollout:
    ```bash
-   curl -X POST http://localhost:8001/rollouts -H 'Content-Type: application/json' -d '{
+   curl -X POST http://localhost:8001/rollouts \
+     -H 'Content-Type: application/json' \
+     -H "X-Service-Token: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}" -d '{
      "model_version": "v2",
      "model_path": "/app/models/v2.onnx",
      "target_percentage": 100,
@@ -78,7 +86,9 @@ python edge_agent/scripts/export_model.py --weights yolov8n.yaml \
 # near-random signal actually registers as (bad) detections.
 docker compose -f docker-compose.yml -f docker-compose.drift-demo.override.yml up -d edge_agent
 
-curl -X POST http://localhost:8001/rollouts -H 'Content-Type: application/json' -d '{
+curl -X POST http://localhost:8001/rollouts \
+  -H 'Content-Type: application/json' \
+  -H "X-Service-Token: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}" -d '{
   "model_version": "v2-bad",
   "model_path": "/app/models/v2-bad.onnx",
   "target_percentage": 50,

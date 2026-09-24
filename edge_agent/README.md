@@ -32,6 +32,7 @@ telemetry. No GPU dependency.
    pip install -r requirements.txt
    SHADOWFLEET_MODEL_PATH=models/yolov8n.onnx \
    SHADOWFLEET_REDIS_URL=redis://localhost:6379/0 \
+   SHADOWFLEET_SERVICE_TOKEN=change-me \
    uvicorn app.main:app --reload
    ```
 
@@ -63,8 +64,14 @@ should fail loudly on that one endpoint, not take the process down).
 ```bash
 curl -X POST http://localhost:8000/admin/model \
   -H 'Content-Type: application/json' \
+  -H "X-Service-Token: $SHADOWFLEET_SERVICE_TOKEN" \
   -d '{"role": "prod", "model_version": "yolov8n-v2", "model_path": "models/v2.onnx"}'
 ```
+
+`/admin/model` requires the shared service token (SRS NFR-8) in an
+`X-Service-Token` header, matching `SHADOWFLEET_SERVICE_TOKEN`; a missing or
+wrong token returns `401`, and with no token configured every call is
+rejected. `/health` and `/infer` stay unauthenticated.
 
 `role` is `"prod"` or `"shadow"`; setting `role: "shadow"` with
 `model_path: null` clears the shadow model. A failed load (bad path,

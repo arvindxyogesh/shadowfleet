@@ -13,6 +13,13 @@ Streams consumer running as an in-process background task.
 
 ## Endpoints
 
+Every `POST` endpoint below requires the shared service token (SRS NFR-8)
+in an `X-Service-Token` header, matching `SHADOWFLEET_CP_SERVICE_TOKEN`; a
+missing or wrong token returns `401`, and with no token configured every
+write is rejected. `GET` endpoints stay unauthenticated. The same token is
+sent on OTA pushes to each node's `/admin/model`, so `edge_agent`'s
+`SHADOWFLEET_SERVICE_TOKEN` must be set to the same value.
+
 - `GET /health`
 - `GET /fleet/nodes` — every node seen so far, its current model versions,
   and whether it's reported telemetry within `node_stale_after_seconds`
@@ -60,6 +67,7 @@ system runs a single control-plane instance, so consumer-group semantics
 pip install -r requirements.txt
 SHADOWFLEET_CP_DATABASE_URL=sqlite:///./shadowfleet.db \
 SHADOWFLEET_CP_REDIS_URL=redis://localhost:6379/0 \
+SHADOWFLEET_CP_SERVICE_TOKEN=change-me \
 uvicorn app.main:app --reload --port 8001
 ```
 
@@ -123,5 +131,6 @@ docker build -t shadowfleet-control-plane .
 docker run -p 8001:8001 \
   -e SHADOWFLEET_CP_REDIS_URL=redis://host.docker.internal:6379/0 \
   -e SHADOWFLEET_CP_DATABASE_URL=postgresql+psycopg2://user:pass@host/db \
+  -e SHADOWFLEET_CP_SERVICE_TOKEN=change-me \
   shadowfleet-control-plane
 ```
