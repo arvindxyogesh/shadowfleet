@@ -1,4 +1,4 @@
-.PHONY: up down logs export-model demo test
+.PHONY: up down logs export-model demo test secret-scan
 
 up:
 	docker compose -f infra/docker-compose.yml up --build -d
@@ -19,3 +19,8 @@ demo:
 
 test:
 	pytest edge_agent/tests control_plane/tests training_pipeline/tests -v
+
+# NFR-10: same scan CI runs (.github/workflows/secret-scan.yml). Needs a
+# local gitleaks install: https://github.com/gitleaks/gitleaks#installing
+secret-scan:
+	gitleaks git . --redact --verbose --no-banner
