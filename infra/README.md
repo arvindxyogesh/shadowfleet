@@ -23,6 +23,11 @@ Compose passes one `SHADOWFLEET_SERVICE_TOKEN` to all three app services,
 falling back to `shadowfleet-dev-token` for local demos; set your own in a
 gitignored `infra/.env` (`SHADOWFLEET_SERVICE_TOKEN=...`) for anything real.
 
+The `rollouts` table gained `model_sha256`/`previous_model_sha256`
+columns for OTA checksum verification (NFR-9). There are no migrations
+yet, so a Postgres volume created before that needs `docker compose down
+-v` (or an equivalent `ALTER TABLE`) before rollouts will start.
+
 - edge_agent: http://localhost:8000 (`/health`, `/infer`)
 - control_plane: http://localhost:8001 (`/health`, `/fleet/nodes`,
   `/fleet/nodes/{id}/telemetry`, `/hard-examples`)
@@ -38,13 +43,17 @@ update on its own within a few seconds.
 1. Stage a second ONNX artifact the node can load, e.g.
    `edge_agent/models/v2.onnx` (any valid export — even the same weights
    under a new name works for exercising the mechanism).
-2. Start a rollout:
+2. Start a rollout, passing the artifact's SHA-256 -- each node verifies
+   it before loading the file and rejects the push on a mismatch (NFR-9):
    ```bash
+   MODEL_SHA256=$(shasum -a 256 ../edge_agent/models/v2.onnx | cut -d' ' -f1)
+
    curl -X POST http://localhost:8001/rollouts \
      -H 'Content-Type: application/json' \
      -H "X-Service-Token: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}" -d '{
      "model_version": "v2",
      "model_path": "/app/models/v2.onnx",
+     "model_sha256": "'"$MODEL_SHA256"'",
      "target_percentage": 100,
      "evaluation_window_seconds": 60
    }'
@@ -86,11 +95,14 @@ python edge_agent/scripts/export_model.py --weights yolov8n.yaml \
 # near-random signal actually registers as (bad) detections.
 docker compose -f docker-compose.yml -f docker-compose.drift-demo.override.yml up -d edge_agent
 
+MODEL_SHA256=$(shasum -a 256 ../edge_agent/models/v2-bad.onnx | cut -d' ' -f1)
+
 curl -X POST http://localhost:8001/rollouts \
   -H 'Content-Type: application/json' \
   -H "X-Service-Token: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}" -d '{
   "model_version": "v2-bad",
   "model_path": "/app/models/v2-bad.onnx",
+  "model_sha256": "'"$MODEL_SHA256"'",
   "target_percentage": 50,
   "evaluation_window_seconds": 120
 }'

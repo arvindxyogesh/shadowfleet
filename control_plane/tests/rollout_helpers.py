@@ -2,14 +2,18 @@
 
 from datetime import datetime
 
+V1_SHA256 = "1" * 64
+V2_SHA256 = "2" * 64
+V3_SHA256 = "3" * 64
+
 
 class FakeNodeClient:
     def __init__(self, unreachable: set[str] | None = None):
-        self.calls: list[tuple[str, str, str | None, str | None]] = []
+        self.calls: list[tuple[str, str, str | None, str | None, str | None]] = []
         self.unreachable = unreachable or set()
 
-    async def set_model(self, base_url, role, model_version, model_path):
-        self.calls.append((base_url, role, model_version, model_path))
+    async def set_model(self, base_url, role, model_version, model_path, model_sha256):
+        self.calls.append((base_url, role, model_version, model_path, model_sha256))
         return base_url not in self.unreachable
 
 

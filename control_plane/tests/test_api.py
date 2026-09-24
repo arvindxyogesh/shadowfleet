@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from control_plane.app.config import settings
 from control_plane.app.db import FleetNode, HardExample, TelemetryEvent, create_session_factory
 from control_plane.app.main import app, get_session
+from control_plane.tests.rollout_helpers import V1_SHA256, V2_SHA256
 
 AUTH_HEADERS = {"X-Service-Token": settings.service_token}
 
@@ -191,7 +192,12 @@ def test_start_rollout_then_list_and_get_it():
         with TestClient(app, headers=AUTH_HEADERS) as client:
             start_resp = client.post(
                 "/rollouts",
-                json={"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100},
+                json={
+                    "model_version": "v2",
+                    "model_path": "models/v2.onnx",
+                    "model_sha256": V2_SHA256,
+                    "target_percentage": 100,
+                },
             )
             assert start_resp.status_code == 201
             rollout_id = start_resp.json()["id"]
@@ -206,6 +212,33 @@ def test_start_rollout_then_list_and_get_it():
 
     assert detail_resp.status_code == 200
     assert len(detail_resp.json()["nodes"]) == 2
+    assert detail_resp.json()["model_sha256"] == V2_SHA256
+
+
+@pytest.mark.parametrize(
+    "overrides,expected_status",
+    [
+        ({"model_sha256": None}, 422),
+        ({"model_sha256": "not-a-sha256"}, 422),
+        ({"previous_model_path": "models/v1.onnx"}, 400),
+        ({"previous_model_path": "models/v1.onnx", "previous_model_sha256": "short"}, 422),
+    ],
+    ids=["missing", "malformed", "previous_path_without_checksum", "malformed_previous"],
+)
+def test_start_rollout_rejects_missing_or_malformed_checksums(overrides, expected_status):
+    body = {"model_version": "v2", "model_path": "models/v2.onnx", "model_sha256": V2_SHA256, "target_percentage": 100}
+    body.update(overrides)
+    body = {k: v for k, v in body.items() if v is not None}
+    app.dependency_overrides[get_session] = _override_session(_seeded_session_factory())
+    try:
+        with TestClient(app, headers=AUTH_HEADERS) as client:
+            resp = client.post("/rollouts", json=body)
+            rollouts = client.get("/rollouts").json()
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == expected_status
+    assert rollouts == []
 
 
 def test_get_rollout_404_for_unknown_id():
@@ -225,7 +258,12 @@ def test_rollout_pause_resume_and_rollback_endpoints():
         with TestClient(app, headers=AUTH_HEADERS) as client:
             start_resp = client.post(
                 "/rollouts",
-                json={"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100},
+                json={
+                    "model_version": "v2",
+                    "model_path": "models/v2.onnx",
+                    "model_sha256": V2_SHA256,
+                    "target_percentage": 100,
+                },
             )
             rollout_id = start_resp.json()["id"]
 
@@ -258,7 +296,8 @@ def test_start_rollout_with_no_fleet_nodes_returns_400():
     try:
         with TestClient(app, headers=AUTH_HEADERS) as client:
             resp = client.post(
-                "/rollouts", json={"model_version": "v2", "model_path": "models/v2.onnx"}
+                "/rollouts",
+                json={"model_version": "v2", "model_path": "models/v2.onnx", "model_sha256": V2_SHA256},
             )
     finally:
         app.dependency_overrides.clear()
@@ -272,7 +311,12 @@ def test_pause_a_never_started_rollout_returns_400():
         with TestClient(app, headers=AUTH_HEADERS) as client:
             start_resp = client.post(
                 "/rollouts",
-                json={"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100},
+                json={
+                    "model_version": "v2",
+                    "model_path": "models/v2.onnx",
+                    "model_sha256": V2_SHA256,
+                    "target_percentage": 100,
+                },
             )
             rollout_id = start_resp.json()["id"]
             client.post(f"/rollouts/{rollout_id}/pause", json={})
@@ -286,7 +330,10 @@ def test_pause_a_never_started_rollout_returns_400():
 
 WRITE_ENDPOINTS = [
     ("/hard-examples/hard-1/label", {"label": {"boxes": []}}),
-    ("/rollouts", {"model_version": "v2", "model_path": "models/v2.onnx", "target_percentage": 100}),
+    (
+        "/rollouts",
+        {"model_version": "v2", "model_path": "models/v2.onnx", "model_sha256": V2_SHA256, "target_percentage": 100},
+    ),
     ("/rollouts/1/pause", {"actor": "mallory"}),
     ("/rollouts/1/resume", {"actor": "mallory"}),
     ("/rollouts/1/rollback", {"actor": "mallory", "reason": "unauthenticated"}),
@@ -304,7 +351,12 @@ def test_write_endpoints_reject_missing_or_wrong_service_token(path, body, heade
             # so a 401 can't be confused with a 404.
             assert authed_client.post(
                 "/rollouts",
-                json={"model_version": "v1b", "model_path": "models/v1b.onnx", "target_percentage": 100},
+                json={
+                    "model_version": "v1b",
+                    "model_path": "models/v1b.onnx",
+                    "model_sha256": V1_SHA256,
+                    "target_percentage": 100,
+                },
             ).status_code == 201
         with TestClient(app) as client:
             resp = client.post(path, json=body, headers=headers)

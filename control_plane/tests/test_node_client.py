@@ -1,3 +1,5 @@
+import json
+
 import httpx
 
 from control_plane.app import node_client
@@ -13,7 +15,7 @@ def _patch_transport(monkeypatch, handler):
     monkeypatch.setattr(node_client.httpx, "AsyncClient", _client_with_mock_transport)
 
 
-async def test_set_model_sends_service_token_to_node(monkeypatch):
+async def test_set_model_sends_service_token_and_checksum_to_node(monkeypatch):
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -23,20 +25,26 @@ async def test_set_model_sends_service_token_to_node(monkeypatch):
     _patch_transport(monkeypatch, handler)
 
     ok = await HTTPNodeClient("shared-secret").set_model(
-        "http://node-1:8000", "shadow", "v2", "models/v2.onnx"
+        "http://node-1:8000", "shadow", "v2", "models/v2.onnx", "ab" * 32
     )
 
     assert ok is True
     assert len(requests) == 1
     assert str(requests[0].url) == "http://node-1:8000/admin/model"
     assert requests[0].headers["X-Service-Token"] == "shared-secret"
+    assert json.loads(requests[0].content) == {
+        "role": "shadow",
+        "model_version": "v2",
+        "model_path": "models/v2.onnx",
+        "model_sha256": "ab" * 32,
+    }
 
 
 async def test_set_model_reports_rejected_token_as_failure(monkeypatch):
     _patch_transport(monkeypatch, lambda request: httpx.Response(401))
 
     ok = await HTTPNodeClient("wrong-secret").set_model(
-        "http://node-1:8000", "prod", "v2", "models/v2.onnx"
+        "http://node-1:8000", "prod", "v2", "models/v2.onnx", "ab" * 32
     )
 
     assert ok is False

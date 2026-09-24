@@ -12,11 +12,13 @@ Usage:
     python scripts/demo.py
 """
 
+import hashlib
 import io
 import os
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import requests
 from PIL import Image, ImageDraw
@@ -89,13 +91,22 @@ def show_hard_examples() -> None:
         print(f"  - {ex['input_id']}: {ex['reason']} (status={ex['status']})")
 
 
-def try_canary_rollout(model_path: str) -> None:
+def try_canary_rollout(model_path: str, local_model_path: Path) -> None:
     step("Starting a canary rollout")
+    # Nodes checksum-verify every OTA-pushed artifact before loading it
+    # (NFR-9). The compose stack mounts edge_agent/models into each node,
+    # so hashing the local copy gives the checksum of the file they'll load.
+    try:
+        model_sha256 = hashlib.sha256(local_model_path.read_bytes()).hexdigest()
+    except OSError as exc:
+        print(f"  could not hash {local_model_path} for the rollout: {exc}")
+        return
     resp = requests.post(
         f"{CONTROL_PLANE_URL}/rollouts",
         json={
             "model_version": f"demo-{datetime.now(timezone.utc):%H%M%S}",
             "model_path": model_path,
+            "model_sha256": model_sha256,
             "target_percentage": 100,
             "evaluation_window_seconds": 20,
         },
@@ -134,7 +145,10 @@ def main() -> None:
     # Reuses the node's already-loaded weights under a new version name --
     # any valid ONNX export works here, since the point is exercising the
     # rollout mechanism, not showing an actual model improvement.
-    try_canary_rollout(model_path="/app/models/yolov8n.onnx")
+    try_canary_rollout(
+        model_path="/app/models/yolov8n.onnx",
+        local_model_path=Path(__file__).resolve().parent.parent / "edge_agent" / "models" / "yolov8n.onnx",
+    )
 
     step("Done")
     print(f"Dashboard: {GRAFANA_URL}")

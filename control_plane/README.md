@@ -31,8 +31,12 @@ sent on OTA pushes to each node's `/admin/model`, so `edge_agent`'s
   to a flagged input and mark it `labeled`, ready for `training_pipeline` to
   pick up
 - `POST /rollouts` — start a canary rollout (`model_version`, `model_path`,
-  `target_percentage`, optional `evaluation_window_seconds`,
-  `previous_model_path`, `actor`)
+  `model_sha256`, `target_percentage`, optional `evaluation_window_seconds`,
+  `previous_model_path` + `previous_model_sha256`, `actor`). Every OTA push
+  carries the artifact's SHA-256, which the node verifies before loading
+  (SRS NFR-9); a node that rejects it shows up as unreachable in the
+  audit log, and a promotion stays in `shadow` until every canary node
+  accepts it
 - `GET /rollouts` / `GET /rollouts/{id}` — list rollouts / one rollout's
   detail including its per-node canary/control assignments
 - `POST /rollouts/{id}/pause` / `/resume` / `/rollback` — manual override

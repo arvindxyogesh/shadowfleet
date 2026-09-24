@@ -25,6 +25,7 @@ does the record-level merge once inputs are in a common in-memory form.
 """
 
 import argparse
+import hashlib
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -99,6 +100,10 @@ def main() -> None:
 
         exported_path = model.export(format="onnx", imgsz=args.imgsz, opset=12)
         mlflow.log_artifact(str(exported_path))
+        # Nodes verify this before loading the artifact OTA (NFR-9), so a
+        # rollout of it needs this exact value as model_sha256.
+        onnx_sha256 = hashlib.sha256(Path(exported_path).read_bytes()).hexdigest()
+        mlflow.log_param("onnx_sha256", onnx_sha256)
 
     version = f"yolov8n-{datetime.now(timezone.utc):%Y%m%d%H%M%S}"
     session_factory = create_session_factory(args.registry_db_url)
@@ -117,6 +122,7 @@ def main() -> None:
 
     print(f"Registered model version {record.version} (promoted={record.promoted})")
     print(f"ONNX artifact: {exported_path}")
+    print(f"ONNX artifact sha256: {onnx_sha256}")
 
 
 if __name__ == "__main__":

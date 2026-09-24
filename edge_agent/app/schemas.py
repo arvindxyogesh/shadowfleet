@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BoundingBox(BaseModel):
@@ -41,6 +41,9 @@ class SetModelRequest(BaseModel):
     role: str  # "prod" | "shadow"
     model_version: str | None = None
     model_path: str | None = None
+    # NFR-9: hex SHA-256 of the artifact at model_path. Required whenever
+    # model_path is set; the node refuses to load a file that doesn't match.
+    model_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
 
 
 class SetModelResponse(BaseModel):

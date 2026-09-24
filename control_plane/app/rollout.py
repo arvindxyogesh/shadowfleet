@@ -35,6 +35,10 @@ class RolloutManager:
     canary nodes are promoted to production atomically, moving the rollout
     to `status == "completed"`. A completed rollout can still be manually
     rolled back (FR-11) if `previous_model_path` was recorded at start.
+
+    Every push that loads an artifact carries its SHA-256 (NFR-9); the node
+    refuses to load a file that doesn't match, which surfaces here as an
+    unreachable node like any other failed push.
     """
 
     def __init__(
@@ -52,11 +56,18 @@ class RolloutManager:
         session: Session,
         model_version: str,
         model_path: str,
+        model_sha256: str,
         target_percentage: int,
         evaluation_window_seconds: int,
         previous_model_path: str | None = None,
+        previous_model_sha256: str | None = None,
         actor: str = "operator",
     ) -> Rollout:
+        if not model_sha256:
+            raise RolloutError("model_sha256 is required (NFR-9)")
+        if previous_model_path and not previous_model_sha256:
+            raise RolloutError("previous_model_sha256 is required when previous_model_path is set (NFR-9)")
+
         active = session.execute(
             select(Rollout).where(Rollout.status.in_(["shadow", "paused"]))
         ).scalar_one_or_none()
@@ -75,7 +86,9 @@ class RolloutManager:
             model_version=model_version,
             previous_version=previous_version,
             previous_model_path=previous_model_path,
+            previous_model_sha256=previous_model_sha256,
             model_path=model_path,
+            model_sha256=model_sha256,
             target_percentage=target_percentage,
             status="shadow",
             started_at=now,
@@ -89,7 +102,9 @@ class RolloutManager:
         for node_id in control_ids:
             session.add(RolloutNodeAssignment(rollout_id=rollout.id, node_id=node_id, role="control"))
 
-        pushed, unreachable = await self._push_to_nodes(session, canary_ids, "shadow", model_version, model_path)
+        pushed, unreachable = await self._push_to_nodes(
+            session, canary_ids, "shadow", model_version, model_path, model_sha256
+        )
 
         log_audit(
             session,
@@ -149,9 +164,9 @@ class RolloutManager:
             return  # still collecting data
 
         pushed, unreachable = await self._push_to_nodes(
-            session, canary_ids, "prod", rollout.model_version, rollout.model_path
+            session, canary_ids, "prod", rollout.model_version, rollout.model_path, rollout.model_sha256
         )
-        await self._push_to_nodes(session, canary_ids, "shadow", None, None)
+        await self._push_to_nodes(session, canary_ids, "shadow", None, None, None)
 
         assignments = (
             session.execute(
@@ -239,13 +254,17 @@ class RolloutManager:
             if assignment.promoted:
                 if rollout.previous_model_path and rollout.previous_version:
                     ok = await self.node_client.set_model(
-                        node.base_url, "prod", rollout.previous_version, rollout.previous_model_path
+                        node.base_url,
+                        "prod",
+                        rollout.previous_version,
+                        rollout.previous_model_path,
+                        rollout.previous_model_sha256,
                     )
                     (restored if ok else unreachable).append(assignment.node_id)
                 # else: no known prior artifact path -- prod is left as-is
                 # and this is surfaced in the audit log for an operator to
                 # handle manually.
-            ok = await self.node_client.set_model(node.base_url, "shadow", None, None)
+            ok = await self.node_client.set_model(node.base_url, "shadow", None, None, None)
             if ok:
                 cleared.append(assignment.node_id)
             elif assignment.node_id not in unreachable:
@@ -295,7 +314,13 @@ class RolloutManager:
         return list(rows)
 
     async def _push_to_nodes(
-        self, session: Session, node_ids: list[str], role: str, model_version: str | None, model_path: str | None
+        self,
+        session: Session,
+        node_ids: list[str],
+        role: str,
+        model_version: str | None,
+        model_path: str | None,
+        model_sha256: str | None,
     ) -> tuple[list[str], list[str]]:
         pushed, unreachable = [], []
         for node_id in node_ids:
@@ -303,6 +328,6 @@ class RolloutManager:
             if node is None or not node.base_url:
                 unreachable.append(node_id)
                 continue
-            ok = await self.node_client.set_model(node.base_url, role, model_version, model_path)
+            ok = await self.node_client.set_model(node.base_url, role, model_version, model_path, model_sha256)
             (pushed if ok else unreachable).append(node_id)
         return pushed, unreachable

@@ -73,18 +73,24 @@ Let a couple of epochs print live (fast on a GPU — a few seconds each).
 > a new model version in the training pipeline's own registry."
 
 Point at the final `Registered model version ... (promoted=True)` line —
-that's the artifact a canary rollout will actually deploy.
+that's the artifact a canary rollout will actually deploy. The
+`ONNX artifact sha256` line under it is the checksum every node verifies
+before loading that artifact.
 
 ### 5. Canary rollout — the happy path (45s)
 
 > "Now let's roll that new version out to the fleet."
 
 ```bash
+# Each node verifies the artifact's SHA-256 before loading it (NFR-9).
+MODEL_SHA256=$(shasum -a 256 edge_agent/models/yolov8n.onnx | cut -d' ' -f1)
+
 curl -X POST http://localhost:8001/rollouts \
   -H 'Content-Type: application/json' \
   -H "X-Service-Token: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}" -d '{
   "model_version": "v2",
   "model_path": "/app/models/yolov8n.onnx",
+  "model_sha256": "'"$MODEL_SHA256"'",
   "target_percentage": 50,
   "evaluation_window_seconds": 60
 }'
@@ -112,11 +118,14 @@ python edge_agent/scripts/export_model.py --weights yolov8n.yaml \
 docker compose -f infra/docker-compose.yml \
   -f infra/docker-compose.drift-demo.override.yml up -d edge_agent
 
+MODEL_SHA256=$(shasum -a 256 edge_agent/models/v2-bad.onnx | cut -d' ' -f1)
+
 curl -X POST http://localhost:8001/rollouts \
   -H 'Content-Type: application/json' \
   -H "X-Service-Token: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}" -d '{
   "model_version": "v2-bad",
   "model_path": "/app/models/v2-bad.onnx",
+  "model_sha256": "'"$MODEL_SHA256"'",
   "target_percentage": 50,
   "evaluation_window_seconds": 120
 }'
