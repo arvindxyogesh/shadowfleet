@@ -19,8 +19,10 @@ later milestone.
 - `app/registry.py` — `ModelVersion` table (SQLAlchemy) recording every
   trained version's data version, hyperparameters, metrics, and promotion
   outcome — nothing is ever overwritten, so training history is auditable
-- `app/pipeline.py` — ties the above together: registers a trained run and
-  marks it promoted or not
+- `app/pipeline.py` — ties the above together: looks up the current
+  production baseline (the most recently registered promoted version, or
+  none on the first-ever run), registers a trained run, and marks it
+  promoted or not against that baseline
 - `scripts/train.py` — the actual training entrypoint: pulls labeled hard
   examples from the control plane, trains via Ultralytics, evaluates, logs
   to MLflow, exports ONNX, and registers the result
