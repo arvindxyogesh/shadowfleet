@@ -206,11 +206,13 @@ async def start_rollout(
             session,
             model_version=payload.model_version,
             model_path=payload.model_path,
+            model_sha256=payload.model_sha256,
             target_percentage=payload.target_percentage,
             evaluation_window_seconds=(
                 payload.evaluation_window_seconds or settings.rollout_evaluation_window_seconds
             ),
             previous_model_path=payload.previous_model_path,
+            previous_model_sha256=payload.previous_model_sha256,
             actor=payload.actor,
         )
     except RolloutError as exc:
@@ -234,6 +236,7 @@ def get_rollout(rollout_id: int, session: Session = Depends(get_session)) -> Rol
     return RolloutDetailOut(
         id=rollout.id,
         model_version=rollout.model_version,
+        model_sha256=rollout.model_sha256,
         previous_version=rollout.previous_version,
         target_percentage=rollout.target_percentage,
         status=rollout.status,

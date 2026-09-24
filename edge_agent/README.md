@@ -65,8 +65,16 @@ should fail loudly on that one endpoint, not take the process down).
 curl -X POST http://localhost:8000/admin/model \
   -H 'Content-Type: application/json' \
   -H "X-Service-Token: $SHADOWFLEET_SERVICE_TOKEN" \
-  -d '{"role": "prod", "model_version": "yolov8n-v2", "model_path": "models/v2.onnx"}'
+  -d '{"role": "prod", "model_version": "yolov8n-v2", "model_path": "models/v2.onnx",
+       "model_sha256": "'"$(shasum -a 256 models/v2.onnx | cut -d' ' -f1)"'"}'
 ```
+
+Before loading a pushed artifact, the node hashes the file at
+`model_path` and compares it with `model_sha256` (SRS NFR-9). A missing
+checksum, an unreadable file, or a mismatch returns `400` without
+loading anything, so a corrupted or tampered artifact never reaches ONNX
+Runtime. Clearing the shadow model (`model_path: null`) needs no
+checksum.
 
 `/admin/model` requires the shared service token (SRS NFR-8) in an
 `X-Service-Token` header, matching `SHADOWFLEET_SERVICE_TOKEN`; a missing or

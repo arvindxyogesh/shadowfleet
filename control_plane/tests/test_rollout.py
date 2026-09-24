@@ -4,7 +4,14 @@ import pytest
 
 from control_plane.app.db import AuditLogEntry, Rollout, RolloutNodeAssignment, create_session_factory
 from control_plane.app.rollout import RolloutError, RolloutManager
-from control_plane.tests.rollout_helpers import FakeNodeClient, seed_node, seed_telemetry
+from control_plane.tests.rollout_helpers import (
+    V1_SHA256,
+    V2_SHA256,
+    V3_SHA256,
+    FakeNodeClient,
+    seed_node,
+    seed_telemetry,
+)
 
 
 def _make_manager(node_client=None):
@@ -26,6 +33,7 @@ async def test_start_rollout_assigns_canary_and_pushes_shadow_model():
             session,
             model_version="v2",
             model_path="models/v2.onnx",
+            model_sha256=V2_SHA256,
             target_percentage=20,
             evaluation_window_seconds=300,
         )
@@ -41,10 +49,11 @@ async def test_start_rollout_assigns_canary_and_pushes_shadow_model():
 
     # Every canary node got a shadow-model push, no control nodes touched.
     assert len(node_client.calls) == 2
-    for _base_url, role, version, path in node_client.calls:
+    for _base_url, role, version, path, sha256 in node_client.calls:
         assert role == "shadow"
         assert version == "v2"
         assert path == "models/v2.onnx"
+        assert sha256 == V2_SHA256
 
     with session_factory() as session:
         audit = session.query(AuditLogEntry).filter_by(action="rollout_started").one()
@@ -59,10 +68,31 @@ async def test_start_rollout_rejects_a_second_concurrent_rollout():
     with session_factory() as session:
         seed_node(session, "node-0")
         session.commit()
-        await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+        await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 100, 300)
 
         with pytest.raises(RolloutError):
-            await manager.start_rollout(session, "v3", "models/v3.onnx", 100, 300)
+            await manager.start_rollout(session, "v3", "models/v3.onnx", V3_SHA256, 100, 300)
+
+
+@pytest.mark.asyncio
+async def test_start_rollout_requires_checksums():
+    session_factory = create_session_factory("sqlite:///:memory:")
+    node_client = FakeNodeClient()
+    manager = _make_manager(node_client)
+
+    with session_factory() as session:
+        seed_node(session, "node-0")
+        session.commit()
+        with pytest.raises(RolloutError, match="model_sha256"):
+            await manager.start_rollout(session, "v2", "models/v2.onnx", "", 100, 300)
+        # A restorable prior artifact is useless without its checksum: the
+        # node would refuse the rollback push.
+        with pytest.raises(RolloutError, match="previous_model_sha256"):
+            await manager.start_rollout(
+                session, "v2", "models/v2.onnx", V2_SHA256, 100, 300, previous_model_path="models/v1.onnx"
+            )
+
+    assert node_client.calls == []
 
 
 @pytest.mark.asyncio
@@ -72,7 +102,7 @@ async def test_start_rollout_rejects_empty_fleet():
 
     with session_factory() as session:
         with pytest.raises(RolloutError):
-            await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+            await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 100, 300)
 
 
 @pytest.mark.asyncio
@@ -84,7 +114,7 @@ async def test_evaluate_rollout_promotes_after_window_with_no_drift():
     with session_factory() as session:
         seed_node(session, "node-0")
         session.commit()
-        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 100, 300)
         node_client.calls.clear()  # drop the initial shadow push
 
         started_at = rollout.started_at
@@ -105,6 +135,12 @@ async def test_evaluate_rollout_promotes_after_window_with_no_drift():
     roles_called = [call[1] for call in node_client.calls]
     assert roles_called.count("prod") == 1
     assert roles_called.count("shadow") == 1
+    # The promotion push carries the candidate's checksum (NFR-9); the
+    # shadow-clear push loads nothing, so it carries none.
+    prod_call = next(c for c in node_client.calls if c[1] == "prod")
+    assert prod_call[2:] == ("v2", "models/v2.onnx", V2_SHA256)
+    shadow_call = next(c for c in node_client.calls if c[1] == "shadow")
+    assert shadow_call[2:] == (None, None, None)
 
 
 @pytest.mark.asyncio
@@ -116,7 +152,7 @@ async def test_evaluate_rollout_does_not_complete_when_ota_push_fails_everywhere
     with session_factory() as session:
         seed_node(session, "node-0")
         session.commit()
-        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 100, 300)
 
         past_window = rollout.started_at + timedelta(seconds=301)
         await manager.evaluate_rollout(session, rollout, now=past_window)
@@ -145,7 +181,7 @@ async def test_evaluate_rollout_retries_promotion_on_a_later_cycle_after_failure
     with session_factory() as session:
         seed_node(session, "node-0")
         session.commit()
-        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 100, 300)
 
         past_window = rollout.started_at + timedelta(seconds=301)
         await manager.evaluate_rollout(session, rollout, now=past_window)
@@ -169,7 +205,7 @@ async def test_evaluate_rollout_does_nothing_before_window_elapses():
     with session_factory() as session:
         seed_node(session, "node-0")
         session.commit()
-        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 100, 300)
         node_client.calls.clear()
 
         still_within_window = rollout.started_at + timedelta(seconds=10)
@@ -192,7 +228,7 @@ async def test_evaluate_rollout_rolls_back_on_detected_drift():
             seed_node(session, f"node-{i}")
         session.commit()
 
-        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 50, 300)
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 50, 300)
         node_client.calls.clear()
 
         canary_ids, control_ids = manager._node_ids(session, rollout.id)
@@ -248,7 +284,7 @@ async def test_drift_detection_ignores_canary_prod_confidence_and_uses_shadow_co
             seed_node(session, f"node-{i}")
         session.commit()
 
-        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 50, 300)
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 50, 300)
         node_client.calls.clear()
 
         canary_ids, control_ids = manager._node_ids(session, rollout.id)
@@ -284,7 +320,7 @@ async def test_pause_and_resume_rollout():
     with session_factory() as session:
         seed_node(session, "node-0")
         session.commit()
-        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 100, 300)
 
         await manager.pause_rollout(session, rollout, actor="alice")
         session.refresh(rollout)
@@ -307,7 +343,7 @@ async def test_cannot_pause_a_rollout_that_is_not_active():
     with session_factory() as session:
         seed_node(session, "node-0")
         session.commit()
-        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 100, 300)
         await manager.pause_rollout(session, rollout)
 
         with pytest.raises(RolloutError):
@@ -327,9 +363,11 @@ async def test_force_rollback_on_completed_rollout_restores_prod_when_path_known
             session,
             "v2",
             "models/v2.onnx",
+            V2_SHA256,
             100,
             300,
             previous_model_path="models/v1.onnx",
+            previous_model_sha256=V1_SHA256,
         )
         await manager.evaluate_rollout(session, rollout, now=rollout.started_at + timedelta(seconds=301))
         session.refresh(rollout)
@@ -344,6 +382,10 @@ async def test_force_rollback_on_completed_rollout_restores_prod_when_path_known
 
     roles_and_versions = [(c[1], c[2]) for c in node_client.calls]
     assert ("prod", "v1") in roles_and_versions
+    # Restoring the prior artifact is an OTA push too, so it carries the
+    # prior artifact's checksum (NFR-9).
+    restore_call = next(c for c in node_client.calls if c[1] == "prod")
+    assert restore_call[3:] == ("models/v1.onnx", V1_SHA256)
     assert ("shadow", None) in roles_and_versions
 
 
@@ -356,7 +398,7 @@ async def test_evaluate_rollout_is_a_noop_for_non_shadow_status():
     with session_factory() as session:
         seed_node(session, "node-0")
         session.commit()
-        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", 100, 300)
+        rollout = await manager.start_rollout(session, "v2", "models/v2.onnx", V2_SHA256, 100, 300)
         await manager.pause_rollout(session, rollout)
         node_client.calls.clear()
 

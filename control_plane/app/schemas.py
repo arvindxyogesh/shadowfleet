@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class HealthResponse(BaseModel):
@@ -50,14 +50,22 @@ class LabelPayload(BaseModel):
     label: dict
 
 
+SHA256_HEX_PATTERN = r"^[0-9a-fA-F]{64}$"
+
+
 class StartRolloutRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
     model_version: str
     model_path: str
+    # NFR-9: forwarded on every OTA push so each node verifies the
+    # artifact before loading it.
+    model_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
     target_percentage: int = 20
     evaluation_window_seconds: int | None = None
     previous_model_path: str | None = None
+    # Required whenever previous_model_path is set, for the same reason.
+    previous_model_sha256: str | None = Field(default=None, pattern=SHA256_HEX_PATTERN)
     actor: str = "operator"
 
 
@@ -75,6 +83,7 @@ class RolloutOut(BaseModel):
 
     id: int
     model_version: str
+    model_sha256: str | None
     previous_version: str | None
     target_percentage: int
     status: str

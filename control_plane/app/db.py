@@ -101,6 +101,13 @@ class Rollout(Base):
     # the shadow model everywhere, but can't undo a completed promotion.
     previous_model_path: Mapped[str | None] = mapped_column(String, nullable=True)
     model_path: Mapped[str] = mapped_column(String)
+    # NFR-9: hex SHA-256 of each artifact, sent with every OTA push so the
+    # node can verify the file before loading it. Nullable only so rows
+    # from before checksums existed still load; every new rollout sets
+    # model_sha256, and previous_model_sha256 whenever previous_model_path
+    # is set.
+    model_sha256: Mapped[str | None] = mapped_column(String, nullable=True)
+    previous_model_sha256: Mapped[str | None] = mapped_column(String, nullable=True)
     target_percentage: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String)  # shadow | promoting | completed | rolled_back | paused
     started_at: Mapped[datetime] = mapped_column(DateTime)

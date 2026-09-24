@@ -12,6 +12,7 @@ from .auth import require_service_token
 from .config import settings
 from .disagreement import compute_disagreement
 from .inference import ONNXModel
+from .integrity import ChecksumMismatch, verify_model_checksum
 from .schemas import HealthResponse, InferenceResponse, SetModelRequest, SetModelResponse
 from .telemetry import TelemetryPublisher, build_redis_client
 
@@ -82,6 +83,21 @@ def get_model_loader() -> Callable[[str, int], ONNXModel]:
     return ONNXModel
 
 
+def _verify_pushed_model(model_path: str, model_sha256: str | None) -> None:
+    """NFR-9: an OTA-pushed artifact is checksum-verified before it's
+    loaded. A missing checksum, unreadable file, or mismatch is a 400 that
+    leaves the currently loaded model untouched.
+    """
+    if not model_sha256:
+        raise HTTPException(status_code=400, detail="model_sha256 is required when model_path is set")
+    try:
+        verify_model_checksum(model_path, model_sha256)
+    except ChecksumMismatch as exc:
+        raise HTTPException(status_code=400, detail=f"checksum verification failed: {exc}") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"cannot read model for checksum verification: {exc}") from exc
+
+
 @app.get("/health", response_model=HealthResponse)
 def health(
     request: Request, model_version: str = Depends(get_model_version)
@@ -107,11 +123,13 @@ def set_model(
 ) -> SetModelResponse:
     """OTA hot-swap endpoint the control plane's rollout manager calls to
     push a model version onto this node (FR-8), without restarting the
-    process or dropping in-flight requests.
+    process or dropping in-flight requests. The artifact's SHA-256 is
+    verified before loading (NFR-9).
     """
     if payload.role == "prod":
         if not payload.model_path or not payload.model_version:
             raise HTTPException(status_code=400, detail="prod role requires model_path and model_version")
+        _verify_pushed_model(payload.model_path, payload.model_sha256)
         try:
             new_model = model_loader(payload.model_path, settings.input_size)
         except Exception as exc:
@@ -127,6 +145,7 @@ def set_model(
         else:
             if not payload.model_version:
                 raise HTTPException(status_code=400, detail="setting a shadow model requires model_version")
+            _verify_pushed_model(payload.model_path, payload.model_sha256)
             try:
                 new_shadow = model_loader(payload.model_path, settings.input_size)
             except Exception as exc:
