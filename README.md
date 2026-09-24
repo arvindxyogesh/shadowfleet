@@ -3,6 +3,7 @@
 [![edge_agent CI](https://github.com/arvindxyogesh/shadowfleet/actions/workflows/edge-agent-ci.yml/badge.svg)](https://github.com/arvindxyogesh/shadowfleet/actions/workflows/edge-agent-ci.yml)
 [![control_plane CI](https://github.com/arvindxyogesh/shadowfleet/actions/workflows/control-plane-ci.yml/badge.svg)](https://github.com/arvindxyogesh/shadowfleet/actions/workflows/control-plane-ci.yml)
 [![training_pipeline CI](https://github.com/arvindxyogesh/shadowfleet/actions/workflows/training-pipeline-ci.yml/badge.svg)](https://github.com/arvindxyogesh/shadowfleet/actions/workflows/training-pipeline-ci.yml)
+[![secret scan](https://github.com/arvindxyogesh/shadowfleet/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/arvindxyogesh/shadowfleet/actions/workflows/secret-scan.yml)
 
 A closed-loop **fleet data engine** for computer vision, scaled down from
 production systems (Tesla Autopilot/FSD, Waymo) to run entirely on free-tier /
@@ -72,6 +73,14 @@ Per the SRS §10 roadmap:
 
 Run the current stack locally via `infra/docker-compose.yml` — see
 [`infra/README.md`](infra/README.md).
+
+Every push and pull request runs [gitleaks](https://github.com/gitleaks/gitleaks)
+over the full git history (SRS NFR-10, `.github/workflows/secret-scan.yml`);
+run the same scan locally with `make secret-scan`. Real secrets belong in a
+gitignored `.env` (e.g. `infra/.env` for the compose stack) or GitHub
+Actions secrets, never in a tracked file. If the scan flags something,
+removing it in a new commit isn't enough: it's still in history, so rotate
+the secret.
 
 ## Demo
 
