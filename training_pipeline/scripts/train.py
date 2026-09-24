@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.dataset import select_labeled_hard_examples
 from app.evaluation import ModelMetrics
-from app.pipeline import register_trained_model
+from app.pipeline import get_current_production_metrics, register_trained_model
 from app.registry import create_session_factory
 
 
@@ -103,15 +103,14 @@ def main() -> None:
     version = f"yolov8n-{datetime.now(timezone.utc):%Y%m%d%H%M%S}"
     session_factory = create_session_factory(args.registry_db_url)
     with session_factory() as session:
+        production_metrics = get_current_production_metrics(session)
         record = register_trained_model(
             session,
             version=version,
             data_version=args.data_version,
             hyperparameters={"epochs": args.epochs, "imgsz": args.imgsz, "base_dataset": args.base_dataset},
             metrics=ModelMetrics(map50=map50, latency_ms=0.0),
-            # TODO(M5): look up the current production version's metrics
-            # from the registry once canary rollout tracks one.
-            production_metrics=None,
+            production_metrics=production_metrics,
             tolerance=args.tolerance,
             parent_version=args.parent_version,
         )
