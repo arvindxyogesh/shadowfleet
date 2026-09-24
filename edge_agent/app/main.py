@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile
 from PIL import Image, UnidentifiedImageError
 
+from .auth import require_service_token
 from .config import settings
 from .disagreement import compute_disagreement
 from .inference import ONNXModel
@@ -94,7 +95,11 @@ def health(
     )
 
 
-@app.post("/admin/model", response_model=SetModelResponse)
+@app.post(
+    "/admin/model",
+    response_model=SetModelResponse,
+    dependencies=[Depends(require_service_token)],
+)
 def set_model(
     payload: SetModelRequest,
     request: Request,

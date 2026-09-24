@@ -13,6 +13,7 @@ Usage:
 """
 
 import io
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -23,6 +24,9 @@ from PIL import Image, ImageDraw
 EDGE_AGENT_URL = "http://localhost:8000"
 CONTROL_PLANE_URL = "http://localhost:8001"
 GRAFANA_URL = "http://localhost:3000"
+# Control-plane write endpoints require the shared service token (NFR-8);
+# the fallback matches infra/docker-compose.yml's local-demo default.
+SERVICE_TOKEN = os.environ.get("SHADOWFLEET_SERVICE_TOKEN", "shadowfleet-dev-token")
 
 
 def step(title: str) -> None:
@@ -95,6 +99,7 @@ def try_canary_rollout(model_path: str) -> None:
             "target_percentage": 100,
             "evaluation_window_seconds": 20,
         },
+        headers={"X-Service-Token": SERVICE_TOKEN},
         timeout=10,
     )
     if resp.status_code != 201:

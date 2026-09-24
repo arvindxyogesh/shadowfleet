@@ -27,5 +27,10 @@ class Settings(BaseSettings):
     # in single-node/local dev; required for a node to receive rollouts.
     self_base_url: str | None = None
 
+    # NFR-8: shared secret the control plane sends as X-Service-Token when
+    # pushing OTA updates to /admin/model. Empty means unset, which rejects
+    # every write request rather than leaving the endpoint open.
+    service_token: str = ""
+
 
 settings = Settings()

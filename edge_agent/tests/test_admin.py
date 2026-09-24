@@ -1,6 +1,11 @@
 from fastapi.testclient import TestClient
 
+import pytest
+
+from edge_agent.app.config import settings
 from edge_agent.app.main import app, get_model_loader
+
+AUTH_HEADERS = {"X-Service-Token": settings.service_token}
 
 
 class FakeSwappedModel:
@@ -15,7 +20,7 @@ class FakeSwappedModel:
 def test_set_prod_model_updates_version_and_is_reflected_in_health():
     app.dependency_overrides[get_model_loader] = lambda: FakeSwappedModel
     try:
-        with TestClient(app) as client:
+        with TestClient(app, headers=AUTH_HEADERS) as client:
             resp = client.post(
                 "/admin/model",
                 json={"role": "prod", "model_version": "yolov8n-v2", "model_path": "models/v2.onnx"},
@@ -34,7 +39,7 @@ def test_set_prod_model_updates_version_and_is_reflected_in_health():
 def test_set_shadow_model_then_clear_it():
     app.dependency_overrides[get_model_loader] = lambda: FakeSwappedModel
     try:
-        with TestClient(app) as client:
+        with TestClient(app, headers=AUTH_HEADERS) as client:
             set_resp = client.post(
                 "/admin/model",
                 json={"role": "shadow", "model_version": "candidate-v1", "model_path": "models/c1.onnx"},
@@ -53,14 +58,14 @@ def test_set_shadow_model_then_clear_it():
 
 
 def test_set_prod_model_requires_model_path_and_version():
-    with TestClient(app) as client:
+    with TestClient(app, headers=AUTH_HEADERS) as client:
         resp = client.post("/admin/model", json={"role": "prod"})
     assert resp.status_code == 400
 
 
 def test_set_prod_model_rejects_unloadable_model_without_disrupting_current_state():
     # No override: the real ONNXModel loader will fail on a bogus path.
-    with TestClient(app) as client:
+    with TestClient(app, headers=AUTH_HEADERS) as client:
         health_before = client.get("/health").json()
 
         resp = client.post(
@@ -75,6 +80,34 @@ def test_set_prod_model_rejects_unloadable_model_without_disrupting_current_stat
 
 
 def test_set_model_rejects_unknown_role():
-    with TestClient(app) as client:
+    with TestClient(app, headers=AUTH_HEADERS) as client:
         resp = client.post("/admin/model", json={"role": "bogus"})
     assert resp.status_code == 400
+
+
+@pytest.mark.parametrize("headers", [{}, {"X-Service-Token": "wrong-token"}])
+def test_set_model_rejects_missing_or_wrong_service_token(headers):
+    app.dependency_overrides[get_model_loader] = lambda: FakeSwappedModel
+    try:
+        with TestClient(app) as client:
+            resp = client.post(
+                "/admin/model",
+                json={"role": "prod", "model_version": "yolov8n-v2", "model_path": "models/v2.onnx"},
+                headers=headers,
+            )
+            health_resp = client.get("/health")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert resp.status_code == 401
+    assert health_resp.json()["model_version"] != "yolov8n-v2"
+
+
+def test_set_model_rejects_everything_when_no_token_is_configured(monkeypatch):
+    monkeypatch.setattr(settings, "service_token", "")
+    with TestClient(app) as client:
+        resp = client.post(
+            "/admin/model", json={"role": "shadow", "model_version": None, "model_path": None},
+            headers={"X-Service-Token": ""},
+        )
+    assert resp.status_code == 401

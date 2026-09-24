@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .auth import require_service_token
 from .config import settings
 from .consumer import TelemetryConsumer
 from .db import (
@@ -82,7 +83,7 @@ async def lifespan(app: FastAPI):
         hard_example_disagreement_threshold=settings.hard_example_disagreement_threshold,
     )
     app.state.rollout_manager = RolloutManager(
-        HTTPNodeClient(),
+        HTTPNodeClient(settings.service_token),
         drift_min_effect_size=settings.drift_min_effect_size,
         drift_t_stat_threshold=settings.drift_t_stat_threshold,
     )
@@ -169,7 +170,11 @@ def list_hard_examples(
     return session.execute(query).scalars().all()
 
 
-@app.post("/hard-examples/{input_id}/label", response_model=HardExampleOut)
+@app.post(
+    "/hard-examples/{input_id}/label",
+    response_model=HardExampleOut,
+    dependencies=[Depends(require_service_token)],
+)
 def label_hard_example(
     input_id: str, payload: LabelPayload, session: Session = Depends(get_session)
 ) -> HardExampleOut:
@@ -186,7 +191,12 @@ def label_hard_example(
     return example
 
 
-@app.post("/rollouts", response_model=RolloutOut, status_code=201)
+@app.post(
+    "/rollouts",
+    response_model=RolloutOut,
+    status_code=201,
+    dependencies=[Depends(require_service_token)],
+)
 async def start_rollout(
     payload: StartRolloutRequest, request: Request, session: Session = Depends(get_session)
 ) -> RolloutOut:
@@ -235,7 +245,11 @@ def get_rollout(rollout_id: int, session: Session = Depends(get_session)) -> Rol
     )
 
 
-@app.post("/rollouts/{rollout_id}/pause", response_model=RolloutOut)
+@app.post(
+    "/rollouts/{rollout_id}/pause",
+    response_model=RolloutOut,
+    dependencies=[Depends(require_service_token)],
+)
 async def pause_rollout(
     rollout_id: int, payload: ActorPayload, request: Request, session: Session = Depends(get_session)
 ) -> RolloutOut:
@@ -249,7 +263,11 @@ async def pause_rollout(
     return rollout
 
 
-@app.post("/rollouts/{rollout_id}/resume", response_model=RolloutOut)
+@app.post(
+    "/rollouts/{rollout_id}/resume",
+    response_model=RolloutOut,
+    dependencies=[Depends(require_service_token)],
+)
 async def resume_rollout(
     rollout_id: int, payload: ActorPayload, request: Request, session: Session = Depends(get_session)
 ) -> RolloutOut:
@@ -263,7 +281,11 @@ async def resume_rollout(
     return rollout
 
 
-@app.post("/rollouts/{rollout_id}/rollback", response_model=RolloutOut)
+@app.post(
+    "/rollouts/{rollout_id}/rollback",
+    response_model=RolloutOut,
+    dependencies=[Depends(require_service_token)],
+)
 async def rollback_rollout(
     rollout_id: int, payload: RollbackPayload, request: Request, session: Session = Depends(get_session)
 ) -> RolloutOut:

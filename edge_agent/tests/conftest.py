@@ -1,6 +1,12 @@
 import io
+import os
 
-import pytest
+# Must run before `edge_agent.app.config` is imported anywhere (its
+# module-level `settings = Settings()` reads the environment at import
+# time), so /admin/model (NFR-8) is reachable with the right token.
+os.environ.setdefault("SHADOWFLEET_SERVICE_TOKEN", "test-service-token")
+
+import pytest  # noqa: E402
 from PIL import Image
 
 

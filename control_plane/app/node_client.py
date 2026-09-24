@@ -17,9 +17,13 @@ class HTTPNodeClient:
     (FR-8's OTA mechanism). Failures are logged and reported as False
     rather than raised — one unreachable node must not abort a rollout
     affecting the rest of the fleet.
+
+    Every push carries the shared service token (NFR-8), since the node's
+    /admin/model endpoint rejects unauthenticated writes.
     """
 
-    def __init__(self, timeout: float = 5.0):
+    def __init__(self, service_token: str, timeout: float = 5.0):
+        self.service_token = service_token
         self.timeout = timeout
 
     async def set_model(
@@ -30,6 +34,7 @@ class HTTPNodeClient:
                 resp = await client.post(
                     f"{base_url}/admin/model",
                     json={"role": role, "model_version": model_version, "model_path": model_path},
+                    headers={"X-Service-Token": self.service_token},
                 )
                 resp.raise_for_status()
             return True

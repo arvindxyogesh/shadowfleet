@@ -80,7 +80,9 @@ that's the artifact a canary rollout will actually deploy.
 > "Now let's roll that new version out to the fleet."
 
 ```bash
-curl -X POST http://localhost:8001/rollouts -H 'Content-Type: application/json' -d '{
+curl -X POST http://localhost:8001/rollouts \
+  -H 'Content-Type: application/json' \
+  -H "X-Service-Token: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}" -d '{
   "model_version": "v2",
   "model_path": "/app/models/yolov8n.onnx",
   "target_percentage": 50,
@@ -110,7 +112,9 @@ python edge_agent/scripts/export_model.py --weights yolov8n.yaml \
 docker compose -f infra/docker-compose.yml \
   -f infra/docker-compose.drift-demo.override.yml up -d edge_agent
 
-curl -X POST http://localhost:8001/rollouts -H 'Content-Type: application/json' -d '{
+curl -X POST http://localhost:8001/rollouts \
+  -H 'Content-Type: application/json' \
+  -H "X-Service-Token: ${SHADOWFLEET_SERVICE_TOKEN:-shadowfleet-dev-token}" -d '{
   "model_version": "v2-bad",
   "model_path": "/app/models/v2-bad.onnx",
   "target_percentage": 50,
